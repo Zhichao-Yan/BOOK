@@ -31,6 +31,17 @@
     * `const char * strstr ( const char * str1, const char * str2 ); ` 在str1中查找str2字符串
     * `char * strcat ( char * destination, const char * source );` 剪接字符串
     * `size_t strlen ( const char * str );`返回字符串长度
+    
 
 * `#include <cassert>`
     * `assert(arg = 2)` 定义的宏函数，用于debug诊断
+
+* `#include <cctype>`
+    * `isupper(c)`
+    * `islower(c)`
+    * `toupper(c)`
+    * `tolower(c)`
+    * `isdigit(c)`
+    * `isalpha(c)`
+    * `isalnum(c)`
+    * `isspace(c)`
