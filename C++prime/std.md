@@ -45,3 +45,6 @@
     * `isalpha(c)`
     * `isalnum(c)`
     * `isspace(c)`
+
+
+* `#include <pthread.h>`
