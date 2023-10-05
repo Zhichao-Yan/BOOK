@@ -48,3 +48,49 @@
 
 
 * `#include <pthread.h>`
+
+* `#inlcude <cstdlib.h`
+    * `void qsort(void* base, size_t num,size_t size,int (*compar)(const void*,const void*));`
+    * 动态分配
+        * `void* malloc (size_t size);`
+            * Allocates a block of size bytes of memory
+            * memory is not initialized, remaining with indeterminate values
+            * If size is zero, the return value depends on the particular library implementation,but shall not be dereferenced
+        * `void* realloc (void* ptr, size_t size);`
+            * Changes the size of the memory block pointed to by ptr.
+            * The content of the memory block is preserved 
+            * if ptr is a null pointer, the function behaves like malloc
+        * `void* calloc (size_t num, size_t size);`
+            * Allocates an array of num elements, each of them size bytes long
+            * initializes all its bits to zero.
+            * If size is zero, the return value depends on the particular library implementation,but shall not be dereferenced
+        * `void free (void* ptr);`
+    * 随机数
+        * `void srand (unsigned int seed);` usually `srand (time(NULL));`
+        * `int rand (void);`
+        Returns a pseudo-random integral number in the range between 0 and RAND_MAX.
+        * `RAND_MAX`
+        This value is library-dependent, but is guaranteed to be at least 32767 on any standard library implementation
+    * 字符串——》数值
+        * 带指向字符指针的指针，指向数值后面的第一个字符
+            * `float strtof (const char* str, char** endptr);`
+            * `double strtod (const char* str, char** endptr);`
+            * `long double strtold (const char* str, char** endptr);`
+            * `long int strtol (const char* str, char** endptr, int base);`
+            * `long long int strtoll (const char* str, char** endptr, int base);`
+            * `unsigned long int strtoul (const char* str, char** endptr, int base);`
+            * `unsigned long long int strtoull (const char* str, char** endptr, int base);`
+        * 直接解析
+            * `double atof (const char* str);`
+            * `int atoi (const char * str);`
+            * `long int atol ( const char * str );`
+            * `long long int atoll ( const char * str );`
+    * 数值算法
+        * 绝对值
+            * `long long int llabs (long long int n);`
+            * `long int labs (long int n);`
+            * `int abs (int n);`
+        * 除数取余
+            * `div_t div (int numer, int denom);`
+            * `ldiv_t ldiv (long int numer, long int denom);`
+            * `lldiv_t lldiv (long long int numer, long long int denom);`
