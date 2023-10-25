@@ -16,7 +16,7 @@ HEADDIR = -iquote ../apue.3e/include
 LIBDIR =  -L../apue.3e/lib
 WFLAG =-Wall
 
-objects = 11-2 11-3 11-4 11-5 11-16
+objects = 12.8.0 12.8.1 12.8.2 12.8.3 12.6.1
 all: $(objects) 
 .PHONY: all 
 

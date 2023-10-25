@@ -3,7 +3,20 @@
         * `sqrt(2.0f)`调用float版本
         * `sqrt(2.0l)`调用long double版本
         * `sqet(2.0)` 调用double版本
-
+* `#include<ctime>`
+    * 类型
+        * `time_t` an integral value representing the number of seconds elapsed since 00:00 hours, Jan 1, 1970 UTC
+        * `struct tm` 结构化的时间：年月日时分秒周
+        * `clock_t` capable of representing clock tick counts
+    * 函数
+        * `clock_t clock (void);`返回时钟计数，2次调用该函数用来返回间隔的时钟计数
+        * `time_t mktime (struct tm * timeptr);` struct tm --> time_t
+        * `struct tm * localtime (const time_t * timer);` time_t ---> struct tm
+        * `double difftime (time_t end, time_t beginning);` 返回两个time_t差值
+        * `char* ctime (const time_t * timer);` 返回Www Mmm dd hh:mm:ss yyyy时间字符串,参数为time_t类型
+        * `char* asctime (const struct tm * timeptr);` 返回Www Mmm dd hh:mm:ss yyyy时间字符串，参数为struct tm类型
+    * 宏
+        * `CLOCKS_PER_SEC`: clock ticks per second on your system
 
 * `#include <string>`
     * `istream& getline ( istream &is , string &str , char delim )`
@@ -31,6 +44,8 @@
     * `const char * strstr ( const char * str1, const char * str2 ); ` 在str1中查找str2字符串
     * `char * strcat ( char * destination, const char * source );` 剪接字符串
     * `size_t strlen ( const char * str );`返回字符串长度
+    * Memory operation
+        * `void * memset ( void * ptr, int value, size_t num );`
     
 
 * `#include <cassert>`
@@ -48,6 +63,9 @@
 
 
 * `#include <pthread.h>`
+
+* `#include <cstdio.h>`
+    * `int fprintf ( FILE * stream, const char * format, ... );`
 
 * `#inlcude <cstdlib.h`
     * `void qsort(void* base, size_t num,size_t size,int (*compar)(const void*,const void*));`
