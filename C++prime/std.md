@@ -46,6 +46,7 @@
     * `size_t strlen ( const char * str );`返回字符串长度
     * Memory operation
         * `void * memset ( void * ptr, int value, size_t num );`
+    * `int strcmp ( const char * str1, const char * str2 );` 字符串比较
     
 
 * `#include <cassert>`
@@ -64,10 +65,15 @@
 
 * `#include <pthread.h>`
 
-* `#include <cstdio.h>`
+* `#include <cstdio>`
     * `int fprintf ( FILE * stream, const char * format, ... );`
+    * `int sprintf ( char * str, const char * format, ... );`
+    * `int printf ( const char * format, ... );`
+    * `int scanf ( const char * format, ... );`
+    * `int fscanf ( FILE * stream, const char * format, ... );`
+    * `int sscanf ( const char * s, const char * format, ...);`
 
-* `#inlcude <cstdlib.h`
+* `#inlcude <cstdlib>`
     * `void qsort(void* base, size_t num,size_t size,int (*compar)(const void*,const void*));`
     * 动态分配
         * `void* malloc (size_t size);`
