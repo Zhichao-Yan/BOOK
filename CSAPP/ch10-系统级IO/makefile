@@ -16,7 +16,7 @@ $(practice): % : $(PRACTICE_DIR)/%.c
 
 $(homework): % : $(HOMEWORK_DIR)/%.c
 	@mkdir -p $(BUILD)
-	$(CC) $(CFLAGS) -I$(INCLUDE) $(INCLUDE)/csapp.c $^ -o $(BUILD)/$@
+	$(CC) $(CFLAGS) -I$(INCLUDE) $(INCLUDE)/csapp.c $< -o $(BUILD)/$@
 
 clean:
 	rm -rf $(BUILD)
