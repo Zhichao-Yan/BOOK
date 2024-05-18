@@ -1,16 +1,29 @@
-CC = gcc
-CFLAGS = -O2 -Wall -I..
+CC := gcc
+CFLAGS := -Wall 
+BUILD := bin
+INCLUDE := ../code
+PRACTICE_DIR := ./practice
+HOMEWORK_DIR := ./homework
+SRC_DIR := ./src
+practice := 11-0 11-1 11-2 11-3
+homework := 
+src := 
 
-echoserveri:echoserveri.c ../src/csapp.o echo.c
-	$(CC) $(CFLAGS) -o echoserveri echoserveri.c ../src/csapp.o echo.c
+all: $(practice) $(homework) $(src)
 
-echoclient:echoclient.c ../src/csapp.o
-	$(CC) $(CFLAGS) -o echoclient echoclient.c ../src/csapp.o
+$(practice): % : $(PRACTICE_DIR)/%.c
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) $(INCLUDE)/csapp.c $< -o $(BUILD)/$@
 
-hostinfo:hostinfo.c 
-	$(CC) $(CFLAGS) hostinfo.c -o hostinfo
+$(homework): % : $(HOMEWORK_DIR)/%.c
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) $(INCLUDE)/csapp.c $< -o $(BUILD)/$@
 
-../src/csapp.o:../src/csapp.c
-	cd ../src/&&make
+$(src): % : $(SRC_DIR)/%.c
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) -I$(INCLUDE) $(INCLUDE)/csapp.c $< -o $(BUILD)/$@
 
-all:echoserveri echoclient hostinfo
+clean:
+	rm -rf $(BUILD)
+
+.PHONY: all clean 
