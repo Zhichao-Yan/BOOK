@@ -756,6 +756,7 @@ ssize_t rio_readn(int fd, void *usrbuf, size_t n)
     char *bufp = usrbuf;
 
     while (nleft > 0) {
+    // 如果read返回0，发出EOF信号
 	if ((nread = read(fd, bufp, nleft)) < 0) {
 	    if (errno == EINTR) /* Interrupted by sig handler return */
 		nread = 0;      /* and call read() again */
@@ -956,7 +957,9 @@ int open_clientfd(char *hostname, char *port) {
 
     /* Get a list of potential server addresses */
     memset(&hints, 0, sizeof(struct addrinfo));
+    // connection type socket
     hints.ai_socktype = SOCK_STREAM;  /* Open a connection */
+    // force using port number
     hints.ai_flags = AI_NUMERICSERV;  /* ... using a numeric port arg. */
     hints.ai_flags |= AI_ADDRCONFIG;  /* Recommended for connections */
     if ((rc = getaddrinfo(hostname, port, &hints, &listp)) != 0) {
@@ -1005,6 +1008,7 @@ int open_listenfd(char *port)
     /* Get a list of potential server addresses */
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_socktype = SOCK_STREAM;             /* Accept connections */
+    // PASSIVE means that it will be a listening socket
     hints.ai_flags = AI_PASSIVE | AI_ADDRCONFIG; /* ... on any IP address */
     hints.ai_flags |= AI_NUMERICSERV;            /* ... using port number */
     if ((rc = getaddrinfo(NULL, port, &hints, &listp)) != 0) {

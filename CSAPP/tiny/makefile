@@ -1,21 +1,19 @@
 CC = gcc
-CFLAGS = -O2 -Wall -I..
+CFLAGS = -g -Wall -Wno-format-overflow -I$(INCLUDE)
+INCLUDE := ../code
+CGI_DIR := cgi-bin
+CGI_FILES := $(wildcard $(CGI_DIR)/*.c)
+CGI_EXE := $(patsubst %.c,%,$(CGI_FILES))
 
-# This flag includes the Pthreads library on a Linux box.
-# Others systems will probably require something different.
-LIB = -lpthread
+all: tiny $(CGI_EXE)
 
-all: tiny cgi
+tiny: tiny.c $(INCLUDE)/csapp.c
+	$(CC) $(CFLAGS) $^ -o $@ 
 
-tiny: tiny.c ../src/csapp.o
-	$(CC) $(CFLAGS) -o tiny tiny.c ../src/csapp.o $(LIB)
-
-../src/csapp.o: ../src/csapp.c
-	echo "compiling csapp.c";cd ../src;make;
-
-cgi:
-	cd cgi-bin;make
+$(CGI_EXE): %: %.c $(INCLUDE)/csapp.c
+	$(CC) $(CFLAGS) $^ -o $@
 
 clean:
-	rm -f *.o tiny *~
-	(cd cgi-bin; make clean)
+	rm -f tiny $(CGI_EXE)
+
+.PHONY: all clean

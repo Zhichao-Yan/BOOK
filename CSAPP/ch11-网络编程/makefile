@@ -7,7 +7,7 @@ HOMEWORK_DIR := ./homework
 SRC_DIR := ./src
 practice := 11-0 11-1 11-2 11-3
 homework := 
-src := 
+src := hostinfo echoclient echoserver
 
 all: $(practice) $(homework) $(src)
 
