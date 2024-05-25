@@ -2,8 +2,12 @@
 
 void transaction(int fd);
 void print_request_header(rio_t *rp);
-void method_get(int fd,char *url);
 void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *cause);
+void parse_url(char *url,char *filename,char *cgi_args);
+
+void method_get(int fd,char *url);
+void method_head(int fd,char *url);
+
 
 int parse_uri(char *uri,char *filename,char *cgiargs);
 void serve_static(int fd,char *filename,int filesize);
@@ -45,6 +49,7 @@ int main(int argc,char **argv)
         // printf("goodbye to (%s,%s)!!!\n\n",hostname,port);       // say goodbye
     }
 }
+
 void transaction(int fd)
 {
     // 一些字符数组，存放URL和方法等
@@ -69,6 +74,7 @@ void transaction(int fd)
 
     }else if(strcasecmp(method,"HEAD") == 0)
     {
+        method_head(fd,url);
 
     }else if(strcasecmp(method,"POST") == 0)
     {
@@ -80,6 +86,12 @@ void transaction(int fd)
     }
 }
 
+void method_head(int fd,char *url)
+{
+    char filename[MAXLINE] = "",cgi_args[MAXLINE] = "";
+    parse_url(url,filename,cgi_args);
+}
+
 void method_get(int fd,char *url)
 {
     // 获取文件的状态
@@ -88,7 +100,7 @@ void method_get(int fd,char *url)
     int is_static;
     // 文件名和cgi动态参数
     char filename[MAXLINE],cgi_args[MAXLINE];
-    is_static = parse_uri(url,filename,cgi_args);// 解析uri后判断是否为动态请求
+    parse_url(url,filename,cgi_args);// 解析url
     // 将filename的文件属性信息保存到sbuf
     if(stat(filename,&sbuf) < 0)    
     {
@@ -136,39 +148,7 @@ void print_request_header(rio_t *rp)
     return;
 }
 
-// 把uri字符串解析成文件名和cgi参数
-int parse_uri(char *uri,char *filename,char *cgiargs)
-{
-    char *ptr;
-    // 动态文件保存在cgi-bin目录中，如果没有该子串，说明为静态文件
-    if(!strstr(uri,"cgi-bin"))  // uri不包含动态文件，因此为静态
-    {
-        strcpy(cgiargs,"");     // 给cgiargs赋值为空，因为请求静态文件，不需要参数
-        strcpy(filename,".");
-        strcat(filename,uri);   // 拼接字符串
-        if(uri[strlen(uri)-1] == '/') // 如果相对路径以/结尾
-        {
-            strcat(filename,"html/index.html");//拼接默认对主页html文件
-        }
-        return 1;
-    }else{
-        ptr = strchr(uri,'?');// 返回？在uri中第一个出现的位置
-        // 如果找到？，说明动态内容带有参数
-        if(ptr)
-        {
-            // 复制ptr后面的参数
-            strcpy(cgiargs,ptr+1);
-            *ptr = '\0';
-        }else{
-            strcpy(cgiargs,"");//如果没有找到？,则没有参数，置空
-        }
-        strcpy(filename,".");
-        strcat(filename,uri);
-        return 0;
-    }
-}
-
-/* 给客户端返回响应报文 */
+/* 给客户端返回错误响应报文 */
 void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *cause)
 {
     char buf[MAXLINE],body[MAXBUF],tmp[MAXBUF];
@@ -202,6 +182,63 @@ void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *caus
     Rio_writen(fd,body,strlen(body));
     return;
 }
+
+/* 从url中分割出文件名和参数名 */
+void parse_url(char *url,char *filename,char *cgi_args)
+{
+    char *ptr = NULL;
+    ptr = strchr(url,'?');// 返回？在uri中第一个出现的位置
+    // 找到'?'
+    if(ptr)
+    {
+        // 把链接中的参数部分拷贝进去
+        strcpy(cgi_args,ptr+1);
+        *ptr = '\0';
+    }else
+        strcpy(cgi_args,"");//如果没有找到？,则没有参数，置空
+    strcpy(filename,".");
+    strcat(filename,url);
+    if(strcmp(filename,"./") == 0)
+    {
+        strcat(filename,"html/index.html");//拼接默认对主页html文件
+    }
+    return;
+}
+
+
+// 把uri字符串解析成文件名和cgi参数
+// int parse_uri(char *uri,char *filename,char *cgiargs)
+// {
+//     char *ptr;
+//     // 动态文件保存在cgi-bin目录中，如果没有该子串，说明为静态文件
+//     if(!strstr(uri,"cgi-bin"))  // uri不包含动态文件，因此为静态
+//     {
+//         strcpy(cgiargs,"");     // 给cgiargs赋值为空，因为请求静态文件，不需要参数
+//         strcpy(filename,".");
+//         strcat(filename,uri);   // 拼接字符串
+//         if(uri[strlen(uri)-1] == '/') // 如果相对路径以/结尾
+//         {
+//             strcat(filename,"html/index.html");//拼接默认对主页html文件
+//         }
+//         return 1;
+//     }else{
+//         ptr = strchr(uri,'?');// 返回？在uri中第一个出现的位置
+//         // 如果找到？，说明动态内容带有参数
+//         if(ptr)
+//         {
+//             // 复制ptr后面的参数
+//             strcpy(cgiargs,ptr+1);
+//             *ptr = '\0';
+//         }else{
+//             strcpy(cgiargs,"");//如果没有找到？,则没有参数，置空
+//         }
+//         strcpy(filename,".");
+//         strcat(filename,uri);
+//         return 0;
+//     }
+// }
+
+
 
 /* 服务静态文件 */
 void serve_static(int fd,char *filename,int filesize)
