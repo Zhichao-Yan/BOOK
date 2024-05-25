@@ -4,6 +4,20 @@
 /* $begin adder */
 #include "csapp.h"
 
+int split(char *token)
+{
+    int value;
+    if (token != NULL) {
+        token = strtok(token, "="); // 分割出"value1"
+        if (token != NULL) {
+            token = strtok(NULL, "="); // 获取"123"
+            if (token != NULL) {
+                value = atoi(token); // 将字符"123"转换为整数
+            }
+        }
+    }
+    return value;
+}
 int main(void) {
     char *buf, *p;
     char arg1[MAXLINE], arg2[MAXLINE], content[MAXLINE], answer[MAXLINE];
@@ -11,13 +25,14 @@ int main(void) {
  
 
     /* Extract the two arguments */
+    // homework 11.10
     if ((buf = getenv("QUERY_STRING")) != NULL) {
-	p = strchr(buf, '&');
-	*p = '\0';
-	strcpy(arg1, buf);
-	strcpy(arg2, p+1);
-	n1 = atoi(arg1);
-	n2 = atoi(arg2);
+        p = strchr(buf, '&');
+        *p = '\0';
+        strcpy(arg1, buf);
+        strcpy(arg2, p+1);
+        n1 = split(arg1);
+        n2 = split(arg2);
     }
 
     /* Make the response body */

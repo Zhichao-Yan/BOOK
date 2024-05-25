@@ -1,16 +1,26 @@
 #include "csapp.h"
 
-void doit(int fd);
-void read_requesthdrs(rio_t *rp);
+void transaction(int fd);
+void print_request_header(rio_t *rp);
+void method_get(int fd,char *url);
+void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *cause);
+
 int parse_uri(char *uri,char *filename,char *cgiargs);
-void clienterror(int fd,char *cause,char *errnum,char *shortmsg,char *longmsg);
 void serve_static(int fd,char *filename,int filesize);
 void serve_dynamic(int fd,char *filename,char *cgiargs);
 void get_filetype(char *filename,char *filetype);
 
+/* homework 11.8 */
+void signal_child_handle(int s)
+{
+    pid_t pid = waitpid(-1,NULL,0);
+    printf("子进程%d结束\n",pid);
+    return;
+}
 
 int main(int argc,char **argv)
 {
+    signal(SIGCHLD,signal_child_handle);
     int listenfd,connfd;
     char hostname[MAXLINE],port[MAXLINE];
     socklen_t clientlen;
@@ -30,79 +40,95 @@ int main(int argc,char **argv)
         // 获得连接套接字对应的客户端地址和端口
         getnameinfo((SA*)&clientaddr,clientlen,hostname,MAXLINE,port,MAXLINE,0);
         printf("Accept connnection from (%s,%s)\n",hostname,port);
-        doit(connfd);   // 处理事务
+        transaction(connfd);   // 处理事务
         Close(connfd);  // 关闭连接
-        printf("goodbye to (%s,%s)\n",hostname,port);       // say goodbye
+        // printf("goodbye to (%s,%s)!!!\n\n",hostname,port);       // say goodbye
     }
 }
-void doit(int fd)
+void transaction(int fd)
 {
-    // 标志：是否为静态请求
-    int is_static;
-    // 获取文件的状态
-    struct stat sbuf;
-    char buf[MAXLINE],method[MAXLINE],uri[MAXLINE],version[MAXLINE];
-    char filename[MAXLINE],cgiargs[MAXLINE];
+    // 一些字符数组，存放URL和方法等
+    char buf[MAXLINE],method[MAXLINE],url[MAXLINE],version[MAXLINE];
     // 初始化缓冲
     rio_t rio;
     Rio_readinitb(&rio,fd);
-    // 读一行，获取请求头，放入buf
+
+    // 读一行获取请求头，放入buf
+    printf("---->Request<----:\n");
     Rio_readlineb(&rio,buf,MAXLINE);
-    printf("Request headers:\n");
     printf("%s",buf);
     //  获得方法 URL连接 以及HTTP版本
-    sscanf(buf,"%s %s %s",method,uri,version);
+    sscanf(buf,"%s %s %s",method,url,version);
+    //读取其他headers信息
+    print_request_header(&rio);
+
     // 如果method不为GET
-    if(strcasecmp(method,"GET")) 
+    if(strcasecmp(method,"GET") == 0) 
     {
+        method_get(fd,url);
+
+    }else if(strcasecmp(method,"HEAD") == 0)
+    {
+
+    }else if(strcasecmp(method,"POST") == 0)
+    {
+
+    }else{
         // 给客户端发送错误报文
-        clienterror(fd,method,"501","Not implemented","Tiny doesn't implemented this method");
+        send_client_msg(fd,"501","Not implemented","Tiny doesn't implemented this method",method);
         return;
     }
-    //读取其他headers信息并且忽略
-    read_requesthdrs(&rio);
-    is_static = parse_uri(uri,filename,cgiargs);// 解析uri后判断是否为动态请求
+}
 
+void method_get(int fd,char *url)
+{
+    // 获取文件的状态
+    struct stat sbuf;
+    // 标志：是否为静态请求
+    int is_static;
+    // 文件名和cgi动态参数
+    char filename[MAXLINE],cgi_args[MAXLINE];
+    is_static = parse_uri(url,filename,cgi_args);// 解析uri后判断是否为动态请求
     // 将filename的文件属性信息保存到sbuf
-    if(stat(filename,&sbuf) < 0)    // 检索文件失败
+    if(stat(filename,&sbuf) < 0)    
     {
         // 发生给客户端404错误报文
-        clienterror(fd,filename,"404","Not found","Tiny couldn't find this file");
+        send_client_msg(fd,"404","Not found","Tiny couldn't find this file",filename);
         return;
     }
     // is_static == 1 表示是静态文件
-    if(is_static)
+    if(is_static == 1)
     {
         // 文件不是普通文件 或者 它是普通文件但是它不可读
         if(!(S_ISREG(sbuf.st_mode))||!(S_IRUSR&sbuf.st_mode))
         {
             // 发送客户端403错误报文，目标文件找到但是不可读
-            clienterror(fd,filename,"403","Forbidden","Tiny couldn't read the file");
+            send_client_msg(fd,"403","Forbidden","Tiny couldn't read the file",filename);
             return;
         }
         // 服务静态内容
         serve_static(fd,filename,sbuf.st_size);
     }else{
-        // 文件不是普通文件 或者 其是普通文件但是文件不可执行
+        // 文件不是普通文件 或者 它是普通文件但是文件不可执行
         if(!(S_ISREG(sbuf.st_mode))||!(S_IXUSR&sbuf.st_mode))
         {
-            printf("%s-%s\n",filename,cgiargs);
-            clienterror(fd,filename,"403","Forbidden","Tiny couldn't run the CGI file");
+            send_client_msg(fd,"403","Forbidden","Tiny couldn't run the CGI file",filename);
             return;
         }
         // 服务动态内容
-        serve_dynamic(fd,filename,cgiargs);
+        serve_dynamic(fd,filename,cgi_args);
     }
-
+    return;
 }
 
-/* 读取除开请求行之外的请求报头 */
-void read_requesthdrs(rio_t *rp)
+/* 读取除开请求行之外的请求报文首部 */
+void print_request_header(rio_t *rp)
 {
     char buf[MAXLINE];
     Rio_readlineb(rp,buf,MAXLINE);
     // 如果读到空的行\r\n,就退出循环
-    while(strcmp(buf,"\r\n"))
+    // 如果没有读到\r\n，说明请求报头没有结束，继续读下一行
+    while(strcmp(buf,"\r\n") == 1)
     {
         Rio_readlineb(rp,buf,MAXLINE);
         printf("%s",buf);
@@ -122,7 +148,7 @@ int parse_uri(char *uri,char *filename,char *cgiargs)
         strcat(filename,uri);   // 拼接字符串
         if(uri[strlen(uri)-1] == '/') // 如果相对路径以/结尾
         {
-            strcat(filename,"html/home.html");//拼接默认对主页html文件
+            strcat(filename,"html/index.html");//拼接默认对主页html文件
         }
         return 1;
     }else{
@@ -130,6 +156,7 @@ int parse_uri(char *uri,char *filename,char *cgiargs)
         // 如果找到？，说明动态内容带有参数
         if(ptr)
         {
+            // 复制ptr后面的参数
             strcpy(cgiargs,ptr+1);
             *ptr = '\0';
         }else{
@@ -141,8 +168,8 @@ int parse_uri(char *uri,char *filename,char *cgiargs)
     }
 }
 
-/* 给客户端返回错误响应报文 */
-void clienterror(int fd,char *cause,char *errnum,char *shortmsg,char *longmsg)
+/* 给客户端返回响应报文 */
+void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *cause)
 {
     char buf[MAXLINE],body[MAXBUF],tmp[MAXBUF];
     // 响应行： HTTP版本 状态码 状态消息
@@ -195,23 +222,24 @@ void serve_static(int fd,char *filename,int filesize)
     strcat(buf,tmp);    
     Rio_writen(fd,buf,strlen(buf));
 
-    printf("Response headers:\n");
+    printf("---->Response<----:\n");
     printf("%s",buf);
 
+    // 打开一个文件
     srcfd = Open(filename,O_RDONLY,0);
-    // 将文件以页为单位映射到内存的虚拟地址空间
-    // 0 设置为0时表示由系统决定映射区的起始地址
-    // filesize 以字节为单位，不足一内存页按一内存页处理
+    // mmap()系统调用使得一个普通文件映射到进程的虚拟区域
+    // 普通文件被映射到进程地址空间后
+    // 进程可以像访问普通内存一样对文件进行访问
+    // NULL 设置为NULL时表示由系统决定映射区的起始地址
+    // filesize 以字节为单位不足一内存页按一内存页处理
     // PROT_READ 页内容可以被读取
-    // MAP_PRIVATE //建立一个写入时拷贝的私有映射。内存区域的写入不会影响到原文件
-    // srcfd有效的文件描述词
-    // mmap()系统调用使得进程之间通过映射同一个普通文件实现共享内存。
-    // 普通文件被映射到进程地址空间后，进程可以像访问普通内存一样对文件进行访问，
-    srcp = Mmap(0,filesize,PROT_READ,MAP_PRIVATE,srcfd,0);
+    // MAP_PRIVATE 建立一个写入时拷贝的私有映射。内存区域的写入不会影响到原文件
+    srcp = Mmap(NULL,filesize,PROT_READ,MAP_PRIVATE,srcfd,0);
     Close(srcfd);
+    // 从srcp开始读
     Rio_writen(fd,srcp,filesize);
-    // 该调用在进程地址空间中解除一个映射关系,addr是调用mmap()时返回的地址，len是映射区的大小
-    Munmap(srcp,filesize);// 避免潜在的内存泄露
+    // 在进程地址空间中解除一个映射关系,addr是调用mmap()时返回的地址，len是映射区的大小
+    Munmap(srcp,filesize);
     return;
 }
 
@@ -237,7 +265,7 @@ void serve_dynamic(int fd,char *filename,char *cgiargs)
         Execve(filename,emptylist,environ);
     }
     //父进程等待子进程结束
-    Wait(NULL);
+    // Wait(NULL);
 }
 
 /* 根据文件名，获取文件类型 */

@@ -754,19 +754,24 @@ ssize_t rio_readn(int fd, void *usrbuf, size_t n)
     size_t nleft = n;
     ssize_t nread;
     char *bufp = usrbuf;
-
-    while (nleft > 0) {
+    while (nleft > 0) 
+    {
     // 如果read返回0，发出EOF信号
-	if ((nread = read(fd, bufp, nleft)) < 0) {
-	    if (errno == EINTR) /* Interrupted by sig handler return */
-		nread = 0;      /* and call read() again */
-	    else
-		return -1;      /* errno set by read() */ 
-	} 
-	else if (nread == 0)
-	    break;              /* EOF */
-	nleft -= nread;
-	bufp += nread;
+    /* 系统调用read如何被信号中断，信号处理函数执行完成后，read不再继续
+    * 而是设置错误代码errno == EINTR，并且设置nread = 0，nleft保存不变，从而重新进入循环
+    * 这里封装了read，能够自动重启中断的系统调用函数read，包装函数更具有鲁棒性
+     */
+        if ((nread = read(fd, bufp, nleft)) < 0) 
+        {
+            if (errno == EINTR) /* Interrupted by sig handler return */
+                nread = 0;      /* and call read() again */
+            else
+                return -1;      /* errno set by read() */ 
+        } 
+        else if (nread == 0)    // 已经读到文件尾部了
+            break;              /* EOF */
+        nleft -= nread;
+        bufp += nread;
     }
     return (n - nleft);         /* Return >= 0 */
 }
@@ -781,16 +786,18 @@ ssize_t rio_writen(int fd, void *usrbuf, size_t n)
     size_t nleft = n;
     ssize_t nwritten;
     char *bufp = usrbuf;
-
-    while (nleft > 0) {
-	if ((nwritten = write(fd, bufp, nleft)) <= 0) {
-	    if (errno == EINTR)  /* Interrupted by sig handler return */
-		nwritten = 0;    /* and call write() again */
-	    else
-		return -1;       /* errno set by write() */
-	}
-	nleft -= nwritten;
-	bufp += nwritten;
+    while (nleft > 0) 
+    {
+        if ((nwritten = write(fd, bufp, nleft)) <= 0) 
+        {
+            // 道理同rio_readn()
+            if (errno == EINTR)  /* Interrupted by sig handler return */
+                nwritten = 0;    /* and call write() again */
+            else
+                return -1;       /* errno set by write() */
+        }
+        nleft -= nwritten;
+        bufp += nwritten;
     }
     return n;
 }
@@ -876,21 +883,25 @@ ssize_t rio_readlineb(rio_t *rp, void *usrbuf, size_t maxlen)
 {
     int n, rc;
     char c, *bufp = usrbuf;
-
-    for (n = 1; n < maxlen; n++) { 
-        if ((rc = rio_read(rp, &c, 1)) == 1) {
-	    *bufp++ = c;
-	    if (c == '\n') {
+    // 最多读取maxlen-1个字符，最后一个留给'\0'
+    for (n = 1; n < maxlen; n++) 
+    { 
+        if ((rc = rio_read(rp, &c, 1)) == 1) 
+        {
+	        *bufp++ = c;
+	        if (c == '\n') 
+            {
                 n++;
-     		break;
+     		    break;
             }
-	} else if (rc == 0) {
-	    if (n == 1)
-		return 0; /* EOF, no data read */
-	    else
-		break;    /* EOF, some data was read */
-	} else
-	    return -1;	  /* Error */
+	    }else if (rc == 0) 
+        {
+	        if (n == 1)
+                return 0; /* EOF, no data read */
+            else
+                break;    /* EOF, some data was read */
+	    }else
+	        return -1;	  /* Error */
     }
     *bufp = 0;
     return n-1;
