@@ -4,12 +4,9 @@ void transaction(int fd);
 void print_request_header(rio_t *rp);
 void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *cause);
 void parse_url(char *url,char *filename,char *cgi_args);
-
 void method_get(int fd,char *url);
 void method_head(int fd,char *url);
 
-
-int parse_uri(char *uri,char *filename,char *cgiargs);
 void serve_static(int fd,char *filename,int filesize);
 void serve_dynamic(int fd,char *filename,char *cgiargs);
 void get_filetype(char *filename,char *filetype);
@@ -46,7 +43,6 @@ int main(int argc,char **argv)
         printf("Accept connnection from (%s,%s)\n",hostname,port);
         transaction(connfd);   // 处理事务
         Close(connfd);  // 关闭连接
-        // printf("goodbye to (%s,%s)!!!\n\n",hostname,port);       // say goodbye
     }
 }
 
@@ -90,45 +86,52 @@ void method_head(int fd,char *url)
 {
     char filename[MAXLINE] = "",cgi_args[MAXLINE] = "";
     parse_url(url,filename,cgi_args);
+
 }
 
 void method_get(int fd,char *url)
 {
     // 获取文件的状态
     struct stat sbuf;
-    // 标志：是否为静态请求
-    int is_static;
+    // 标志：是否为静态请求,默认不是静态
+    int is_static = 0; 
     // 文件名和cgi动态参数
     char filename[MAXLINE],cgi_args[MAXLINE];
     parse_url(url,filename,cgi_args);// 解析url
+    if(!strstr(filename,"cgi-bin")) 
+    {
+        is_static = 1;  // 静态请求
+    }
     // 将filename的文件属性信息保存到sbuf
-    if(stat(filename,&sbuf) < 0)    
+    if(stat(filename,&sbuf) < 0)    // filename指定路径的文件/目录不存在，返回-1
     {
         // 发生给客户端404错误报文
-        send_client_msg(fd,"404","Not found","Tiny couldn't find this file",filename);
+        send_client_msg(fd,"404","Not found","Server couldn't find the file",filename);
         return;
     }
-    // is_static == 1 表示是静态文件
-    if(is_static == 1)
+    if(S_ISREG(sbuf.st_mode))   // 普通文件，而不是目录文件或者套接字文件
     {
-        // 文件不是普通文件 或者 它是普通文件但是它不可读
-        if(!(S_ISREG(sbuf.st_mode))||!(S_IRUSR&sbuf.st_mode))
+        // is_static == 1 表示是静态文件
+        if(is_static == 1) 
         {
-            // 发送客户端403错误报文，目标文件找到但是不可读
-            send_client_msg(fd,"403","Forbidden","Tiny couldn't read the file",filename);
-            return;
+            // 用户没有读取权限
+            if(!(S_IRUSR&sbuf.st_mode))
+            {
+                send_client_msg(fd,"403","Forbidden","Server couldn't read the file",filename);
+                return;
+            }
+            serve_static(fd,filename,sbuf.st_size);
+        }else{
+            // 动态文件，但是没有执行权
+            if(!(S_IXUSR&sbuf.st_mode))
+            {
+                send_client_msg(fd,"403","Forbidden","Server couldn't run the file",filename);
+                return;
+            }
+            serve_dynamic(fd,filename,cgi_args);
         }
-        // 服务静态内容
-        serve_static(fd,filename,sbuf.st_size);
     }else{
-        // 文件不是普通文件 或者 它是普通文件但是文件不可执行
-        if(!(S_ISREG(sbuf.st_mode))||!(S_IXUSR&sbuf.st_mode))
-        {
-            send_client_msg(fd,"403","Forbidden","Tiny couldn't run the CGI file",filename);
-            return;
-        }
-        // 服务动态内容
-        serve_dynamic(fd,filename,cgi_args);
+        send_client_msg(fd,"400","Bad Request","This is not a regular file",filename);
     }
     return;
 }
@@ -204,41 +207,6 @@ void parse_url(char *url,char *filename,char *cgi_args)
     }
     return;
 }
-
-
-// 把uri字符串解析成文件名和cgi参数
-// int parse_uri(char *uri,char *filename,char *cgiargs)
-// {
-//     char *ptr;
-//     // 动态文件保存在cgi-bin目录中，如果没有该子串，说明为静态文件
-//     if(!strstr(uri,"cgi-bin"))  // uri不包含动态文件，因此为静态
-//     {
-//         strcpy(cgiargs,"");     // 给cgiargs赋值为空，因为请求静态文件，不需要参数
-//         strcpy(filename,".");
-//         strcat(filename,uri);   // 拼接字符串
-//         if(uri[strlen(uri)-1] == '/') // 如果相对路径以/结尾
-//         {
-//             strcat(filename,"html/index.html");//拼接默认对主页html文件
-//         }
-//         return 1;
-//     }else{
-//         ptr = strchr(uri,'?');// 返回？在uri中第一个出现的位置
-//         // 如果找到？，说明动态内容带有参数
-//         if(ptr)
-//         {
-//             // 复制ptr后面的参数
-//             strcpy(cgiargs,ptr+1);
-//             *ptr = '\0';
-//         }else{
-//             strcpy(cgiargs,"");//如果没有找到？,则没有参数，置空
-//         }
-//         strcpy(filename,".");
-//         strcat(filename,uri);
-//         return 0;
-//     }
-// }
-
-
 
 /* 服务静态文件 */
 void serve_static(int fd,char *filename,int filesize)
