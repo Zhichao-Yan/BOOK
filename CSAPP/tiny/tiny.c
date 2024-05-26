@@ -4,7 +4,7 @@ void transaction(int fd);
 void print_request_header(rio_t *rp);
 void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *cause);
 void parse_url(char *url,char *filename,char *cgi_args);
-void method_get(int fd,char *url);
+void method_get(int fd,char *url,int head_only);
 void method_head(int fd,char *url);
 
 void serve_static(int fd,char *filename,int filesize);
@@ -66,7 +66,7 @@ void transaction(int fd)
     // 如果method不为GET
     if(strcasecmp(method,"GET") == 0) 
     {
-        method_get(fd,url);
+        method_get(fd,url,0);
 
     }else if(strcasecmp(method,"HEAD") == 0)
     {
@@ -84,12 +84,11 @@ void transaction(int fd)
 
 void method_head(int fd,char *url)
 {
-    char filename[MAXLINE] = "",cgi_args[MAXLINE] = "";
-    parse_url(url,filename,cgi_args);
-    
+    method_get(fd,url,1);
+    return;
 }
 
-void method_get(int fd,char *url)
+void method_get(int fd,char *url,int head_only)
 {
     // 获取文件的状态
     struct stat sbuf;
@@ -154,33 +153,34 @@ void print_request_header(rio_t *rp)
 /* 给客户端返回错误响应报文 */
 void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *cause)
 {
-    char buf[MAXLINE],body[MAXBUF],tmp[MAXBUF];
-    // 响应行： HTTP版本 状态码 状态消息
-    sprintf(buf,"HTTP/1.0 %s %s\r\n",errnum,shortmsg);
-    Rio_writen(fd,buf,strlen(buf));
-    // 响应报头：Content-type
-    sprintf(buf,"Content-type: text/html\r\n");
-    Rio_writen(fd,buf,strlen(buf));
+    char line[MAXBUF],header[MAXBUF],body[MAXBUF],tmp[MAXBUF];
 
     // 生成响应主体 
-    sprintf(body,"<html>\r\n<title>Tiny Error</title>");
-    //sprintf(body,"%s<body bgcolor=""ffffff"">\r\n",body);
+    sprintf(body,"<html>\r\n<title>Server Error</title>");
     strcat(body,"<body bgcolor=""ffffff"">\r\n");
-    //sprintf(body,"%s %s:%s\r\n",body,errnum,shortmsg);
-    sprintf(tmp," %s:%s\r\n",errnum,shortmsg);
+    strcat(body,"<em>The Tiny webserver</em><hr>\r\n");
+    sprintf(tmp,"%s: %s\r\n",errnum,shortmsg);
     strcat(body,tmp);
-    //sprintf(body,"%s<p>%s:%s</p>\r\n",body,longmsg,cause);
-    sprintf(tmp,"<p>%s:%s</p>\r\n",longmsg,cause);
+    sprintf(tmp,"<p>%s: %s</p>\r\n",longmsg,cause);
     strcat(body,tmp);
-    //sprintf(body,"%s</hr><em>The Tiny webserver</em>\r\n",body);
-    strcat(body,"</hr><em>The Tiny webserver</em>\r\n");
-    //sprintf(body,"%s</body>\r\n</html>\r\n",body);
     strcat(body,"</body>\r\n</html>\r\n");
 
+    // 响应行： HTTP版本 状态码 状态消息
+    sprintf(line,"HTTP/1.0 %s %s\r\n",errnum,shortmsg);
+    Rio_writen(fd,line,strlen(line));
+    
+    // 响应报头：Content-type
+    sprintf(header,"Content-type: text/html\r\n");
     // 响应报头：Content-length
+    sprintf(tmp,"Content-length:%d\r\n",(int)strlen(body));
+    strcat(header,tmp);
     // 跟随一个终止报头的空行
-    sprintf(buf,"Content-length:%d\r\n\r\n",(int)strlen(body));
-    Rio_writen(fd,buf,strlen(buf));
+    strcat(header,"\r\n");
+    Rio_writen(fd,header,strlen(header));
+    printf("---->Response<----:\n");
+    printf("%s",line);
+    printf("%s",header);
+
     // 发送响应主体
     Rio_writen(fd,body,strlen(body));
     return;
@@ -282,8 +282,12 @@ void get_filetype(char *filename,char *filetype)
             strcpy(filetype,"imgage/gif");
     else if(strstr(filename,".png"))
             strcpy(filetype,"imgage/png");
-    else if(strstr(filename,".jpg"))
+    else if(strstr(filename,".jpeg"))
             strcpy(filetype,"imgage/jpeg");
+    else if(strstr(filename,".jpg"))
+            strcpy(filetype,"imgage/jpg");
+    else if(strstr(filename,".JPG"))
+            strcpy(filetype,"imgage/JPG");
     else
         strcpy(filetype,"text/plain");
     return;
