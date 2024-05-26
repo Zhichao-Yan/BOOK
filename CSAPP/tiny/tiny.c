@@ -169,11 +169,15 @@ void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *caus
     sprintf(line,"HTTP/1.0 %s %s\r\n",errnum,shortmsg);
     Rio_writen(fd,line,strlen(line));
     
+    // 响应报头： Server: Tiny Web Server
+    strcat(header,"Server: Tiny Web Server\r\n");
     // 响应报头：Content-type
-    sprintf(header,"Content-type: text/html\r\n");
+    strcat(header,"Content-type: text/html\r\n");
     // 响应报头：Content-length
     sprintf(tmp,"Content-length:%d\r\n",(int)strlen(body));
     strcat(header,tmp);
+    // 响应报头：Connection: close
+    strcat(header,"Connection: close\r\n");
     // 跟随一个终止报头的空行
     strcat(header,"\r\n");
     Rio_writen(fd,header,strlen(header));
