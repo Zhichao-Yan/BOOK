@@ -6,16 +6,17 @@ void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *caus
 void parse_url(char *url,char *filename,char *cgi_args);
 void method_get(int fd,char *url,int head_only);
 void method_head(int fd,char *url);
-
-void serve_static(int fd,char *filename,int filesize,int head_only);
-void serve_dynamic(int fd,char *filename,char *cgiargs,int head_only);
 void get_filetype(char *filename,char *filetype);
+void serve_static(int fd,char *filename,int filesize,int head_only);
+void serve_dynamic(int fd,char *filename,char *cgi_args,int head_only);
+
 
 /* homework 11.8 */
 void signal_child_handle(int s)
 {
     pid_t pid = waitpid(-1,NULL,0);
-    printf("子进程%d结束\n",pid);
+    printf("---->Response<----:\n");
+    printf("子进程%d结束\n\n",pid);
     return;
 }
 
@@ -219,25 +220,34 @@ void parse_url(char *url,char *filename,char *cgi_args)
 void serve_static(int fd,char *filename,int filesize,int head_only)
 {
     int srcfd;
-    char *srcp,filetype[MAXLINE],buf[MAXBUF],tmp[MAXBUF];
-    get_filetype(filename,filetype);    // 获取文件类型，用于填充响应报头Content-type
-    sprintf(buf,"HTTP/1.0 200 OK\r\n"); // 成功响应
-    //sprintf(buf,"%sServer: Tiny Web Server\r\n",buf);
-    strcat(buf,"Server: Tiny Web Server\r\n");
-    //sprintf(buf,"%sConnection: close\r\n",buf);
-    strcat(buf,"Connection: close\r\n");
-    //sprintf(buf,"%sContent-length: %d\r\n",buf,filesize);
+    char *srcp,filetype[MAXLINE] = "",line[MAXBUF] = "",header[MAXBUF] = "",tmp[MAXBUF] = "";
+    
+    // 响应行
+    sprintf(line,"HTTP/1.0 200 OK\r\n");
+    Rio_writen(fd,line,strlen(line));
+
+    // 响应报头Server
+    strcat(header,"Server: Tiny Web Server\r\n");
+    // 响应报头Content-length
     sprintf(tmp,"Content-length: %d\r\n",filesize);
-    strcat(buf,tmp);
-    //sprintf(buf,"%sContent-type: %s\r\n\r\n",buf,filetype);
-    sprintf(tmp,"Content-type: %s\r\n\r\n",filetype);
-    strcat(buf,tmp);    
-    Rio_writen(fd,buf,strlen(buf));
+    strcat(header,tmp);
+    // 获取文件类型，用于填充响应报头Content-type
+    get_filetype(filename,filetype);    
+    sprintf(tmp,"Content-type: %s\r\n",filetype);
+    strcat(header,tmp);  
+    // 响应报头Connection
+    strcat(header,"Connection: close\r\n");
+    // 响应报头结尾的回车换行符
+    strcat(header,"\r\n");
+    Rio_writen(fd,header,strlen(header));
 
     printf("---->Response<----:\n");
-    printf("%s",buf);
+    printf("%s",line);
+    printf("%s",header);
 
-    // 打开一个文件
+    if(head_only == 1)
+        return;
+    // 打开一个文件描述符
     srcfd = Open(filename,O_RDONLY,0);
     // mmap()系统调用使得一个普通文件映射到进程的虚拟区域
     // 普通文件被映射到进程地址空间后
@@ -247,37 +257,38 @@ void serve_static(int fd,char *filename,int filesize,int head_only)
     // PROT_READ 页内容可以被读取
     // MAP_PRIVATE 建立一个写入时拷贝的私有映射。内存区域的写入不会影响到原文件
     srcp = Mmap(NULL,filesize,PROT_READ,MAP_PRIVATE,srcfd,0);
+    // 关闭文件描述符
     Close(srcfd);
-    // 从srcp开始读
+    // 从srcp开始读filesize个字节大小
     Rio_writen(fd,srcp,filesize);
-    // 在进程地址空间中解除一个映射关系,addr是调用mmap()时返回的地址，len是映射区的大小
+    // 在进程地址空间中解除一个映射关系
     Munmap(srcp,filesize);
     return;
 }
 
 /* 服务动态文件 */
-void serve_dynamic(int fd,char *filename,char *cgiargs,int head_only)
+void serve_dynamic(int fd,char *filename,char *cgi_args,int head_only)
 {
-    char buf[MAXLINE],*emptylist[] = {NULL};
-    sprintf(buf,"HTTP/1.0 200 OK\r\n");
-    Rio_writen(fd,buf,strlen(buf));
-    sprintf(buf,"Server: Tiny Web Server\r\n");
-    Rio_writen(fd,buf,strlen(buf));
+    // 子进程参数列表
+    char *empty_args[] = {NULL};
     // 创建子进程
     if(Fork() == 0)
     {
-        //设置环境变量QUERY_STRING的值为cgiargs，1表示可重写，即如果QUERY_STRING已经存在，则覆盖它
-        setenv("QUERY_STRING",cgiargs,1);
+        //设置环境变量QUERY_STRING的值为cgi_args，1表示可重写，即如果QUERY_STRING已经存在，则覆盖它
+        setenv("QUERY_STRING",cgi_args,1);
+        // 设置环境变量head_only
+        if(head_only == 1)
+            setenv("HEAD_ONLY","1",1);
+        else
+            setenv("HEAD_ONLY","0",1);
         //将子进程的标准输出重定向到fd描述符
         //这个的fd为客户端连接套接字文件描述符
         Dup2(fd,STDOUT_FILENO);
         // 指向filename指向的动态文件
         // emptylist是要调用的程序执行的参数序列，也就是我们要调用的程序需要传入的参数
         // environ 同样也是参数序列，一般来说他是一种键值对的形式 key=value. 作为我们是新程序的环境
-        Execve(filename,emptylist,environ);
+        Execve(filename,empty_args,environ);
     }
-    //父进程等待子进程结束
-    // Wait(NULL);
 }
 
 /* 根据文件名，获取文件类型 */

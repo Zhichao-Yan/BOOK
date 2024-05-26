@@ -8,4 +8,5 @@ test
 bin/
 *.mp4
 adder
-tiny
+tiny-server/tiny
+tiny-server/img/
