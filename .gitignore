@@ -8,5 +8,5 @@ test
 bin/
 *.mp4
 adder
-tiny-server/http
-tiny-server/img/
+CSAPP/tiny-server/img/
+CSAPP/tiny-server/http
