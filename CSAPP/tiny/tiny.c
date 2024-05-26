@@ -77,7 +77,7 @@ void transaction(int fd)
 
     }else{
         // 给客户端发送错误报文
-        send_client_msg(fd,"501","Not implemented","Tiny doesn't implemented this method",method);
+        send_client_msg(fd,"501","Not implemented","Server doesn't implemented this method",method);
         return;
     }
 }
@@ -86,14 +86,14 @@ void method_head(int fd,char *url)
 {
     char filename[MAXLINE] = "",cgi_args[MAXLINE] = "";
     parse_url(url,filename,cgi_args);
-
+    
 }
 
 void method_get(int fd,char *url)
 {
     // 获取文件的状态
     struct stat sbuf;
-    // 标志：是否为静态请求,默认不是静态
+    // 标志：是否为静态请求,默认为动态
     int is_static = 0; 
     // 文件名和cgi动态参数
     char filename[MAXLINE],cgi_args[MAXLINE];
