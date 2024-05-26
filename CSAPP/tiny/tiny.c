@@ -2,13 +2,13 @@
 
 void transaction(int fd);
 void print_request_header(rio_t *rp);
-void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *cause);
+void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *cause,int head_only);
 void parse_url(char *url,char *filename,char *cgi_args);
 void method_get(int fd,char *url,int head_only);
 void method_head(int fd,char *url);
 
-void serve_static(int fd,char *filename,int filesize);
-void serve_dynamic(int fd,char *filename,char *cgiargs);
+void serve_static(int fd,char *filename,int filesize,int head_only);
+void serve_dynamic(int fd,char *filename,char *cgiargs,int head_only);
 void get_filetype(char *filename,char *filetype);
 
 /* homework 11.8 */
@@ -77,7 +77,7 @@ void transaction(int fd)
 
     }else{
         // 给客户端发送错误报文
-        send_client_msg(fd,"501","Not implemented","Server doesn't implemented this method",method);
+        send_client_msg(fd,"501","Not implemented","Server doesn't implemented this method",method,0);
         return;
     }
 }
@@ -105,7 +105,7 @@ void method_get(int fd,char *url,int head_only)
     if(stat(filename,&sbuf) < 0)    // filename指定路径的文件/目录不存在，返回-1
     {
         // 发生给客户端404错误报文
-        send_client_msg(fd,"404","Not found","Server couldn't find the file",filename);
+        send_client_msg(fd,"404","Not found","Server couldn't find the file",filename,head_only);
         return;
     }
     if(S_ISREG(sbuf.st_mode))   // 普通文件，而不是目录文件或者套接字文件
@@ -116,21 +116,21 @@ void method_get(int fd,char *url,int head_only)
             // 用户没有读取权限
             if(!(S_IRUSR&sbuf.st_mode))
             {
-                send_client_msg(fd,"403","Forbidden","Server couldn't read the file",filename);
+                send_client_msg(fd,"403","Forbidden","Server couldn't read the file",filename,head_only);
                 return;
             }
-            serve_static(fd,filename,sbuf.st_size);
+            serve_static(fd,filename,sbuf.st_size,head_only);
         }else{
             // 动态文件，但是没有执行权
             if(!(S_IXUSR&sbuf.st_mode))
             {
-                send_client_msg(fd,"403","Forbidden","Server couldn't run the file",filename);
+                send_client_msg(fd,"403","Forbidden","Server couldn't run the file",filename,head_only);
                 return;
             }
-            serve_dynamic(fd,filename,cgi_args);
+            serve_dynamic(fd,filename,cgi_args,head_only);
         }
     }else{
-        send_client_msg(fd,"400","Bad Request","This is not a regular file",filename);
+            send_client_msg(fd,"400","Bad Request","This is not a regular file",filename,head_only);
     }
     return;
 }
@@ -151,9 +151,9 @@ void print_request_header(rio_t *rp)
 }
 
 /* 给客户端返回错误响应报文 */
-void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *cause)
+void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *cause,int head_only)
 {
-    char line[MAXBUF],header[MAXBUF],body[MAXBUF],tmp[MAXBUF];
+    char line[MAXBUF] = "",header[MAXBUF] = "",body[MAXBUF] = "",tmp[MAXBUF] = "";
 
     // 生成响应主体 
     sprintf(body,"<html>\r\n<title>Server Error</title>");
@@ -181,10 +181,13 @@ void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *caus
     // 跟随一个终止报头的空行
     strcat(header,"\r\n");
     Rio_writen(fd,header,strlen(header));
+
     printf("---->Response<----:\n");
     printf("%s",line);
     printf("%s",header);
 
+    if(head_only == 1)
+        return;
     // 发送响应主体
     Rio_writen(fd,body,strlen(body));
     return;
@@ -213,7 +216,7 @@ void parse_url(char *url,char *filename,char *cgi_args)
 }
 
 /* 服务静态文件 */
-void serve_static(int fd,char *filename,int filesize)
+void serve_static(int fd,char *filename,int filesize,int head_only)
 {
     int srcfd;
     char *srcp,filetype[MAXLINE],buf[MAXBUF],tmp[MAXBUF];
@@ -253,7 +256,7 @@ void serve_static(int fd,char *filename,int filesize)
 }
 
 /* 服务动态文件 */
-void serve_dynamic(int fd,char *filename,char *cgiargs)
+void serve_dynamic(int fd,char *filename,char *cgiargs,int head_only)
 {
     char buf[MAXLINE],*emptylist[] = {NULL};
     sprintf(buf,"HTTP/1.0 200 OK\r\n");
@@ -291,7 +294,7 @@ void get_filetype(char *filename,char *filetype)
     else if(strstr(filename,".jpg"))
             strcpy(filetype,"imgage/jpg");
     else if(strstr(filename,".JPG"))
-            strcpy(filetype,"imgage/JPG");
+            strcpy(filetype,"image/JPG");
     else
         strcpy(filetype,"text/plain");
     return;
