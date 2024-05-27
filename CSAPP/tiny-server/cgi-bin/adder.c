@@ -4,39 +4,22 @@
 /* $begin adder */
 #include "csapp.h"
 
-int split(char *token)
-{
-    int value;
-    if (token != NULL) {
-        token = strtok(token, "="); // 分割出"value1"
-        if (token != NULL) {
-            token = strtok(NULL, "="); // 获取"123"
-            if (token != NULL) {
-                value = atoi(token); // 将字符"123"转换为整数
-            }
-        }
-    }
-    return value;
-}
-
 int main(void) 
 {
-    char *buf, *p;
-    char arg1[MAXLINE], arg2[MAXLINE],content[MAXLINE], answer[MAXLINE];
-
+    char *buf;
+    char content[MAXLINE], answer[MAXLINE];
     int n1=0, n2=0,head_only = 0;
     /* Extract the two arguments */
     // homework 11.10
-    if ((buf = getenv("QUERY_STRING")) != NULL) 
+    if ((buf = getenv("value1")) != NULL)
     {
-        p = strchr(buf, '&');
-        *p = '\0';
-        strcpy(arg1, buf);
-        strcpy(arg2, p+1);
-        n1 = split(arg1);
-        n2 = split(arg2);
+        n1 = atoi(buf);
     }
-    if ((buf = getenv("HEAD_ONLY")) != NULL)
+    if ((buf = getenv("value2")) != NULL)
+    {
+        n2 = atoi(buf);
+    }
+    if ((buf = getenv("head_only")) != NULL)
     {
         head_only = atoi(buf);
     }

@@ -1,24 +1,18 @@
 #include "csapp.h"
 
 void transaction(int fd);
-void print_request_header(rio_t *rp);
 void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *cause,int head_only);
 void parse_url(char *url,char *filename,char *cgi_args);
+int parse_request_header(rio_t *rp);
 void method_get(int fd,char *url,int head_only);
 void method_head(int fd,char *url);
+void method_post(int fd,char *url,char *body);
 void get_filetype(char *filename,char *filetype);
 void serve_static(int fd,char *filename,int filesize,int head_only);
 void serve_dynamic(int fd,char *filename,char *cgi_args,int head_only);
+void signal_child_handle(int s);
 
 
-/* homework 11.8 */
-void signal_child_handle(int s)
-{
-    pid_t pid = waitpid(-1,NULL,0);
-    printf("---->Response<----:\n");
-    printf("子进程%d结束\n\n",pid);
-    return;
-}
 
 int main(int argc,char **argv)
 {
@@ -56,26 +50,22 @@ void transaction(int fd)
     Rio_readinitb(&rio,fd);
 
     // 读一行获取请求头，放入buf
-    printf("---->Request<----:\n");
     Rio_readlineb(&rio,buf,MAXLINE);
     printf("%s",buf);
     //  获得方法 URL连接 以及HTTP版本
     sscanf(buf,"%s %s %s",method,url,version);
-    //读取其他headers信息
-    print_request_header(&rio);
-
+    int content_length = parse_request_header(&rio);
     // 如果method不为GET
     if(strcasecmp(method,"GET") == 0) 
     {
         method_get(fd,url,0);
-
     }else if(strcasecmp(method,"HEAD") == 0)
     {
         method_head(fd,url);
-
     }else if(strcasecmp(method,"POST") == 0)
     {
-
+        Rio_readlineb(&rio,buf,content_length+1);
+        method_post(fd,url,buf);
     }else{
         // 给客户端发送错误报文
         send_client_msg(fd,"501","Not implemented","Server doesn't implemented this method",method,0);
@@ -83,12 +73,22 @@ void transaction(int fd)
     }
 }
 
+void method_post(int fd,char *url,char *body)
+{
+    char filename[MAXLINE],cgi_args[MAXLINE];
+    parse_url(url,filename,cgi_args);// 解析url
+    strcpy(cgi_args,body);
+    serve_dynamic(fd,filename,cgi_args,0);
+}
+
+/* head方法（homework 11.11)*/
 void method_head(int fd,char *url)
 {
     method_get(fd,url,1);
     return;
 }
 
+/* get方法 */
 void method_get(int fd,char *url,int head_only)
 {
     // 获取文件的状态
@@ -136,17 +136,43 @@ void method_get(int fd,char *url,int head_only)
     return;
 }
 
-/* 读取除开请求行之外的请求报文首部 */
-void print_request_header(rio_t *rp)
+
+/* 解读请求报文首部，并且返回可能的主体大小 */
+int parse_request_header(rio_t *rp)
 {
+    int content_length = 0;
     char buf[MAXLINE];
-    Rio_readlineb(rp,buf,MAXLINE);
-    // 如果读到空的行\r\n,就退出循环
-    // 如果没有读到\r\n，说明请求报头没有结束，继续读下一行
-    while(strcmp(buf,"\r\n") == 1)
-    {
+    do{
         Rio_readlineb(rp,buf,MAXLINE);
+        if(strstr(buf,"Content-Length:"))
+        {
+            char *ptr = strchr(buf,':');
+            content_length = atoi(ptr+1);
+        }
         printf("%s",buf);
+    }while(strcmp(buf,"\r\n") != 0);    // 如果没有读到\r\n,则继续循环
+    return content_length;
+}
+
+
+/* 从url中分割出文件名和参数名 */
+void parse_url(char *url,char *filename,char *cgi_args)
+{
+    char *ptr = NULL;
+    ptr = strchr(url,'?');// 返回？在uri中第一个出现的位置
+    // 找到'?'
+    if(ptr)
+    {
+        // 把链接中的参数部分拷贝进去
+        strcpy(cgi_args,ptr+1);
+        *ptr = '\0';
+    }else
+        strcpy(cgi_args,"");//如果没有找到？,则没有参数，置空
+    strcpy(filename,".");
+    strcat(filename,url);
+    if(strcmp(filename,"./") == 0)
+    {
+        strcat(filename,"html/index.html");//拼接默认对主页html文件
     }
     return;
 }
@@ -194,27 +220,7 @@ void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *caus
     return;
 }
 
-/* 从url中分割出文件名和参数名 */
-void parse_url(char *url,char *filename,char *cgi_args)
-{
-    char *ptr = NULL;
-    ptr = strchr(url,'?');// 返回？在uri中第一个出现的位置
-    // 找到'?'
-    if(ptr)
-    {
-        // 把链接中的参数部分拷贝进去
-        strcpy(cgi_args,ptr+1);
-        *ptr = '\0';
-    }else
-        strcpy(cgi_args,"");//如果没有找到？,则没有参数，置空
-    strcpy(filename,".");
-    strcat(filename,url);
-    if(strcmp(filename,"./") == 0)
-    {
-        strcat(filename,"html/index.html");//拼接默认对主页html文件
-    }
-    return;
-}
+
 
 /* 服务静态文件 */
 void serve_static(int fd,char *filename,int filesize,int head_only)
@@ -266,28 +272,42 @@ void serve_static(int fd,char *filename,int filesize,int head_only)
     return;
 }
 
+
+void parse_query_string(char* str,char** result) 
+{
+    int i = 0;
+    char *ptr = NULL;
+    while((ptr = strchr(str,'&')))
+    {
+        result[i++] = str;
+        *ptr = '\0';
+        str = ptr + 1;
+    }
+    result[i++] = str;
+    result[i] = NULL;
+}
+
 /* 服务动态文件 */
 void serve_dynamic(int fd,char *filename,char *cgi_args,int head_only)
 {
-    // 子进程参数列表
-    char *empty_args[] = {NULL};
     // 创建子进程
     if(Fork() == 0)
     {
-        //设置环境变量QUERY_STRING的值为cgi_args，1表示可重写，即如果QUERY_STRING已经存在，则覆盖它
-        setenv("QUERY_STRING",cgi_args,1);
-        // 设置环境变量head_only
-        if(head_only == 1)
-            setenv("HEAD_ONLY","1",1);
-        else
-            setenv("HEAD_ONLY","0",1);
+        char head[20];
+        sprintf(head,"&head_only=%d",head_only);
+        strcat(cgi_args,head);
+        // 子进程参数列表
+        char *envp[MAXLINE];
+        parse_query_string(cgi_args,envp);
+        char *argv[] = {filename,NULL};
+        
         //将子进程的标准输出重定向到fd描述符
         //这个的fd为客户端连接套接字文件描述符
         Dup2(fd,STDOUT_FILENO);
         // 指向filename指向的动态文件
-        // emptylist是要调用的程序执行的参数序列，也就是我们要调用的程序需要传入的参数
-        // environ 同样也是参数序列，一般来说他是一种键值对的形式 key=value. 作为我们是新程序的环境
-        Execve(filename,empty_args,environ);
+        // argv 参数字符串指针数组
+        // envp 环境变量字符串指针数组
+        Execve(filename,argv,envp);
     }
 }
 
@@ -308,5 +328,14 @@ void get_filetype(char *filename,char *filetype)
             strcpy(filetype,"image/JPG");
     else
         strcpy(filetype,"text/plain");
+    return;
+}
+
+/* homework 11.8 */
+void signal_child_handle(int s)
+{
+    pid_t pid = waitpid(-1,NULL,0);
+    printf("---->Response<----:\n");
+    printf("子进程%d结束\n\n",pid);
     return;
 }
