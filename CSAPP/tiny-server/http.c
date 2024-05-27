@@ -3,15 +3,14 @@
 void transaction(int fd);
 void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *cause,int head_only);
 void parse_url(char *url,char *filename,char *cgi_args);
-int parse_request_header(rio_t *rp);
+void parse_request_header(rio_t *rp,int *content_length);
 void method_get(int fd,char *url,int head_only);
 void method_head(int fd,char *url);
-void method_post(int fd,char *url,char *body);
+void method_post(int fd,char *filename,char *body);
 void get_filetype(char *filename,char *filetype);
 void serve_static(int fd,char *filename,int filesize,int head_only);
 void serve_dynamic(int fd,char *filename,char *cgi_args,int head_only);
 void signal_child_handle(int s);
-
 
 
 int main(int argc,char **argv)
@@ -54,9 +53,10 @@ void transaction(int fd)
     printf("%s",buf);
     //  获得方法 URL连接 以及HTTP版本
     sscanf(buf,"%s %s %s",method,url,version);
-    int content_length = parse_request_header(&rio);
+    int content_length = 0;
+    parse_request_header(&rio,&content_length);
     // 如果method不为GET
-    if(strcasecmp(method,"GET") == 0) 
+    if(strcasecmp(method,"GET") == 0)
     {
         method_get(fd,url,0);
     }else if(strcasecmp(method,"HEAD") == 0)
@@ -64,8 +64,10 @@ void transaction(int fd)
         method_head(fd,url);
     }else if(strcasecmp(method,"POST") == 0)
     {
-        Rio_readlineb(&rio,buf,content_length+1);
-        method_post(fd,url,buf);
+        char filename[MAXLINE],body[MAXLINE];
+        Rio_readlineb(&rio,body,content_length+1);
+        parse_url(url,filename,buf);
+        method_post(fd,filename,body);
     }else{
         // 给客户端发送错误报文
         send_client_msg(fd,"501","Not implemented","Server doesn't implemented this method",method,0);
@@ -73,12 +75,11 @@ void transaction(int fd)
     }
 }
 
-void method_post(int fd,char *url,char *body)
+/* POST方法 11.12 */
+void method_post(int fd,char *filename,char *body)
 {
-    char filename[MAXLINE],cgi_args[MAXLINE];
-    parse_url(url,filename,cgi_args);// 解析url
-    strcpy(cgi_args,body);
-    serve_dynamic(fd,filename,cgi_args,0);
+    serve_dynamic(fd,filename,body,0);
+    return;
 }
 
 /* head方法（homework 11.11)*/
@@ -138,20 +139,19 @@ void method_get(int fd,char *url,int head_only)
 
 
 /* 解读请求报文首部，并且返回可能的主体大小 */
-int parse_request_header(rio_t *rp)
+void parse_request_header(rio_t *rp,int *content_length)
 {
-    int content_length = 0;
     char buf[MAXLINE];
     do{
         Rio_readlineb(rp,buf,MAXLINE);
         if(strstr(buf,"Content-Length:"))
         {
             char *ptr = strchr(buf,':');
-            content_length = atoi(ptr+1);
+            *content_length = atoi(ptr+1);
         }
         printf("%s",buf);
     }while(strcmp(buf,"\r\n") != 0);    // 如果没有读到\r\n,则继续循环
-    return content_length;
+    return;
 }
 
 
@@ -300,7 +300,6 @@ void serve_dynamic(int fd,char *filename,char *cgi_args,int head_only)
         char *envp[MAXLINE];
         parse_query_string(cgi_args,envp);
         char *argv[] = {filename,NULL};
-        
         //将子进程的标准输出重定向到fd描述符
         //这个的fd为客户端连接套接字文件描述符
         Dup2(fd,STDOUT_FILENO);
