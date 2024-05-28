@@ -10,12 +10,13 @@ void method_post(int fd,char *filename,char *body);
 void get_filetype(char *filename,char *filetype);
 void serve_static(int fd,char *filename,int filesize,int head_only);
 void serve_dynamic(int fd,char *filename,char *cgi_args,int head_only);
-void signal_child_handle(int s);
-
+void signal_child_handle(int sig);
+void ignore_sigpipe(int sig);
 
 int main(int argc,char **argv)
 {
     signal(SIGCHLD,signal_child_handle);
+    signal(SIGPIPE, ignore_sigpipe);
     int listenfd,connfd;
     char hostname[MAXLINE],port[MAXLINE];
     socklen_t clientlen;
@@ -75,7 +76,7 @@ void transaction(int fd)
     }
 }
 
-/* POST方法 11.12 */
+/* homework-11.12 POST方法  */
 void method_post(int fd,char *filename,char *body)
 {
     serve_dynamic(fd,filename,body,0);
@@ -253,22 +254,20 @@ void serve_static(int fd,char *filename,int filesize,int head_only)
 
     if(head_only == 1)
         return;
-    // 打开一个文件描述符
-    srcfd = Open(filename,O_RDONLY,0);
-    // mmap()系统调用使得一个普通文件映射到进程的虚拟区域
-    // 普通文件被映射到进程地址空间后
-    // 进程可以像访问普通内存一样对文件进行访问
-    // NULL 设置为NULL时表示由系统决定映射区的起始地址
-    // filesize 以字节为单位不足一内存页按一内存页处理
-    // PROT_READ 页内容可以被读取
-    // MAP_PRIVATE 建立一个写入时拷贝的私有映射。内存区域的写入不会影响到原文件
+    /*     
+    *   打开文件并进行内存映射
+    *   mmap()系统调用使得一个普通文件映射到进程的虚拟区域
+    *   普通文件被映射到进程地址空间后，进程可以像访问普通内存一样对文件进行访问
+    *   NULL 设置为NULL时表示由系统决定映射区的起始地址
+    *   filesize 以字节为单位不足一内存页按一内存页处理
+    *   PROT_READ 页内容可以被读取
+    *   MAP_PRIVATE 建立一个写入时拷贝的私有映射。内存区域的写入不会影响到原文件 
+    * */
+    srcfd = Open(filename,O_RDONLY,0);  // 打开一个文件filename并返回文件描述符
     srcp = Mmap(NULL,filesize,PROT_READ,MAP_PRIVATE,srcfd,0);
-    // 关闭文件描述符
-    Close(srcfd);
-    // 从srcp开始读filesize个字节大小
-    Rio_writen(fd,srcp,filesize);
-    // 在进程地址空间中解除一个映射关系
-    Munmap(srcp,filesize);
+    Close(srcfd);   // 关闭文件描述符
+    Rio_writen(fd,srcp,filesize);   // 从srcp开始写入filesize个字节到fd
+    Munmap(srcp,filesize);      // 在进程地址空间中解除一个映射关系
     return;
 }
 
@@ -331,10 +330,16 @@ void get_filetype(char *filename,char *filetype)
 }
 
 /* homework 11.8 */
-void signal_child_handle(int s)
+void signal_child_handle(int sig)
 {
     pid_t pid = waitpid(-1,NULL,0);
     printf("---->Response<----:\n");
     printf("子进程%d结束\n\n",pid);
+    return;
+}
+/* homework 11.13 */
+void ignore_sigpipe(int sig) 
+{
+    printf("连接被客户端提前关闭\n");
     return;
 }
