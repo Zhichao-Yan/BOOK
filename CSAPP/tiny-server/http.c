@@ -12,15 +12,27 @@ void serve_static(int fd,char *filename,int filesize,int head_only);
 void serve_dynamic(int fd,char *filename,char *cgi_args,int head_only);
 void signal_child_handle(int sig);
 void ignore_sigpipe(int sig);
+void* thread(void *arg);
+
+
+void* thread(void *arg)
+{
+    int connfd = *((int*)arg);
+    free(arg);
+    Pthread_detach(Pthread_self());
+    transaction(connfd);   // 处理事务
+    Close(connfd);  // 关闭连接
+    return NULL;
+}
 
 int main(int argc,char **argv)
 {
     signal(SIGCHLD,signal_child_handle);
     signal(SIGPIPE, ignore_sigpipe);
-    int listenfd,connfd;
-    char hostname[MAXLINE],port[MAXLINE];
+    int listenfd;
+    // char hostname[MAXLINE],port[MAXLINE];
     socklen_t clientlen;
-    struct sockaddr_storage clientaddr;
+    struct sockaddr_storage clientaddr; // 用于存储客户端套接字地址
     if(argc != 2)
     {
         fprintf(stderr,"usage: %s <port>\n",argv[0]);
@@ -32,12 +44,13 @@ int main(int argc,char **argv)
     {
         clientlen = sizeof(clientaddr);
         // 接受连接请求
-        connfd = Accept(listenfd,(SA*)&clientaddr,&clientlen);
+        int *connfd = (int*)malloc(sizeof(int));
+        *connfd = Accept(listenfd,(SA*)&clientaddr,&clientlen);
         // 获得连接套接字对应的客户端地址和端口
-        getnameinfo((SA*)&clientaddr,clientlen,hostname,MAXLINE,port,MAXLINE,0);
-        printf("Accept connnection from (%s,%s)\n",hostname,port);
-        transaction(connfd);   // 处理事务
-        Close(connfd);  // 关闭连接
+        // getnameinfo((SA*)&clientaddr,clientlen,hostname,MAXLINE,port,MAXLINE,0);
+        // printf("Accept connnection from (%s,%s)\n",hostname,port);
+        pthread_t id;
+        Pthread_create(&id,NULL,thread,(void*)connfd);
     }
 }
 
