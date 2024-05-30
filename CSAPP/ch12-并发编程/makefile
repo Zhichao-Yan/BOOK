@@ -7,7 +7,7 @@ HOMEWORK_DIR := ./homework
 SRC_DIR := ./src
 practice := 
 homework := 
-src := hello echoservert sharing echoserverp
+src := hello echoservert sharing echoserverp select echoservers badcnt goodcnt
 
 all: $(practice) $(homework) $(src)
 

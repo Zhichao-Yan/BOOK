@@ -3,7 +3,7 @@
 #define N 2
 void *thread(void *vargp);
 
-char **ptr;  /* Global variable */ //line:conc:sharing:ptrdec
+char **ptr;  /* Global variable */ 
 
 int main() 
 {

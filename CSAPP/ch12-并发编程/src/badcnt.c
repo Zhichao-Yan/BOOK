@@ -27,10 +27,10 @@ int main(int argc,char** argv)
     Pthread_join(t2,NULL);
     if(cnt != 2 * niters)
     {
-        printf("Boom:cnt = %ld",cnt);
+        printf("Boom:cnt = %ld\n",cnt);
     }else
     {
-        printf("Ok:cnt = %ld",cnt);
+        printf("Ok:cnt = %ld\n",cnt);
     }
     exit(0);
 }
