@@ -1,18 +1,33 @@
 #include "csapp.h"
 #define MAXTHREADS 32
 
-void *sum_array(void *vargp); /* Thread routine */
+/* 
+执行参数1：./bin/psum-array 1 31
+计算时间1：4.814300秒
 
-/* Global shared variables */
-long psum[MAXTHREADS];  /* Partial sum computed by each thread */
-long nelems_per_thread; /* Number of elements summed by each thread */
+执行参数2: ./bin/psum-array 2 31
+计算时间2: 5.443870秒
+
+执行参数3: /bin/psum-array 4 31
+计算时间3: 9.425474秒
+
+执行参数4: ./bin/psum-array 8 31
+计算时间4: 7.968204秒
+
+执行参数5: ./bin/psum-array 16 31
+计算时间5: 6.987187秒
+*/
+
+
+void *sum_array(void *vargp); 
+long psum[MAXTHREADS];  
+long nelems_per_thread; 
 
 int main(int argc, char **argv)
 {
     long i, nelems, log_nelems, nthreads, myid[MAXTHREADS], result = 0;
     pthread_t tid[MAXTHREADS];
 
-    /* Get input arguments */
     if (argc != 3)
     {
         printf("Usage: %s <nthreads> <log_nelems>\n", argv[0]);
@@ -22,47 +37,44 @@ int main(int argc, char **argv)
     log_nelems = atoi(argv[2]);
     nelems = (1L << log_nelems);
 
-    /* Check input arguments */
     if ((nelems % nthreads) != 0 || (log_nelems > 31))
     {
         printf("Error: invalid nelems\n");
         exit(0);
     }
     nelems_per_thread = nelems / nthreads;
+
     clock_t start = clock();
-    /* Create peer threads and wait for them to finish */
     for (i = 0; i < nthreads; i++)
-    {                                                       // line:conc:psumarray:createloop1
-        myid[i] = i;                                        // line:conc:psumarray:createloop2
-        Pthread_create(&tid[i], NULL, sum_array, &myid[i]); // line:conc:psumarray:createloop3
-    }                                                       // line:conc:psumarray:createloop4
-    for (i = 0; i < nthreads; i++)                          // line:conc:psumarray:waitloop1
-        Pthread_join(tid[i], NULL);                         // line:conc:psumarray:waitloop2
+    {                                                       
+        myid[i] = i;                                        
+        Pthread_create(&tid[i], NULL, sum_array, &myid[i]); 
+    }                                                       
+    for (i = 0; i < nthreads; i++)                          
+        Pthread_join(tid[i], NULL);                         
+
+    for (i = 0; i < nthreads; i++) 
+        result += psum[i];         
     clock_t stop = clock();
-    /* Add up the partial sums computed by each thread */
-    for (i = 0; i < nthreads; i++) // line:conc:psumarray:sumloop1
-        result += psum[i];         // line:conc:psumarray:sumloop2
-  
-    printf("计算时间为：%f秒", (double)(stop - start) / CLOCKS_PER_SEC);
-    /* Check final answer */
-    if (result != (nelems * (nelems - 1)) / 2) // line:conc:psumarray:check1
-        printf("Error: result=%ld\n", result); // line:conc:psumarray:check2
+
+    printf("计算时间为：%f秒\n", (double)(stop - start) / CLOCKS_PER_SEC);
+    if (result != (nelems * (nelems - 1)) / 2) 
+        printf("Error: result=%ld\n", result); 
 
     exit(0);
 }
 
-/* $begin psumarraythread */
-/* Thread routine for psum-array.c */
+
 void *sum_array(void *vargp)
 {
-    long myid = *((long *)vargp); /* Extract the thread ID */        // line:conc:psumarray:extractid
-    long start = myid * nelems_per_thread; /* Start element index */ // line:conc:psumarray:getstart
-    long end = start + nelems_per_thread; /* End element index */    // line:conc:psumarray:getend
+    long myid = *((long *)vargp); 
+    long start = myid * nelems_per_thread; 
+    long end = start + nelems_per_thread; 
     long i;
 
     for (i = start; i < end; i++)
-    {                    // line:conc:psumarray:threadsumloop1
-        psum[myid] += i; // line:conc:psumarray:threadsumloop2
-    }                    // line:conc:psumarray:threadsumloop3
+    {                    
+        psum[myid] += i; 
+    }                    
     return NULL;
 }

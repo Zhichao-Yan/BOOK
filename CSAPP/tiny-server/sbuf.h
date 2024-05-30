@@ -5,12 +5,14 @@
 
 typedef struct {
     int n;          // 槽位的最大数量
+    int count;      // 实际项目的数量
     int *buf;       // 动态分配的数组
     int front;      // 指向项目数组的第一个项目
     int rear;       // 指向项目数组的最后一个项目
     sem_t slot;     // 空槽位的数量
     sem_t item;     // 项目的数量
-    sem_t mutex;    // 提供互斥的缓冲区访问
+    // sem_t mutex;   
+    pthread_mutex_t mutex; // 提供互斥的缓冲区访问
 }sbuf_t;
 
 void sbuf_init(sbuf_t *b,int n);

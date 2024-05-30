@@ -1,4 +1,9 @@
 #include "csapp.h"
+#include "sbuf.h"
+#include "queue.h"
+#define SBUFSIZE 16
+#define QUEUE_SIZE 100
+#define MINI_THREADS 4
 
 void transaction(int fd);
 void send_client_msg(int fd,char *errnum,char *shortmsg,char *longmsg,char *cause,int head_only);
@@ -12,17 +17,87 @@ void serve_static(int fd,char *filename,int filesize,int head_only);
 void serve_dynamic(int fd,char *filename,char *cgi_args,int head_only);
 void signal_child_handle(int sig);
 void ignore_sigpipe(int sig);
-void* thread(void *arg);
+void* worker(void *arg);
+void* manager(void *arg);
 
+sbuf_t sbuf; // 缓冲
+pthread_cond_t cond = PTHREAD_COND_INITIALIZER; // 条件变量
 
-void* thread(void *arg)
+/* 工作线程 */
+void* worker(void *arg)
 {
-    int connfd = *((int*)arg);
-    free(arg);
     Pthread_detach(Pthread_self());
-    transaction(connfd);   // 处理事务
-    Close(connfd);  // 关闭连接
-    return NULL;
+    while(1)
+    {
+        int oldstate;
+        /* 
+        *    取消状态再次变成PTHREAD_CANCEL_DISABLE
+        *    取消请求会被挂起，这意味这在下面的网络通信中
+        *    线程不会被取消，直到取消状态再次变成PTHREAD_CANCEL_ENABLE
+        *  */
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,&oldstate);    
+        int connfd = sbuf_remove(&sbuf);
+        transaction(connfd);   // 处理事务
+        Close(connfd);  // 关闭连接
+        pthread_setcancelstate(oldstate,NULL);  // 取消状态再次变成PTHREAD_CANCEL_ENABLE
+        pthread_testcancel();   // 设置取消点，线程在此检查是否有取消请求，如果有，就会pthread_exit()
+    }
+}
+
+/* 管理者线程例程 */
+void* manager(void *arg)
+{
+    /* 初始化线程id队列 */
+    queue q;
+    init_queue(&q,QUEUE_SIZE);
+
+    pthread_t tid;
+    /* 初始创建MINI_THREADS个线程*/
+    for(int i = 0; i < MINI_THREADS; ++i)
+    {
+        Pthread_create(&tid,NULL,worker,NULL);
+        queue_push(&q,tid);
+    }
+    unsigned long cnt = MINI_THREADS;   // cnt记录当前的线程数量
+    while(1)
+    {
+        pthread_mutex_lock(&(sbuf.mutex));
+        /* 
+        *   已知当缓冲区为空或者为满的时候，sbuf.front == sbuf.rear
+        *   如果不满足该条件，则释放互斥量，并且继续睡眠等待。
+        *   当收到满或者空的信号时醒过来，重新获得锁，并且检查条件
+        *   如果不满足循环，则退出循环
+        *  */
+        while(sbuf.front != sbuf.rear)  
+        {
+            pthread_cond_wait(&cond,&(sbuf.mutex));
+        }
+        if(sbuf.count == 0)
+        {
+            // 如果cnt比规定最小的线程数量还大，则继续减小线程数量，否则即算了
+            if(cnt > MINI_THREADS)
+            {
+                unsigned long i = cnt * 0.5;
+                while(i > 0)
+                {
+                    tid = queue_pop(&q);    // 弹出线程tid
+                    --i;            
+                    pthread_cancel(tid);    // 取消线程tid
+                }
+                cnt = cnt * 0.5;
+            }
+        }else if(sbuf.count == sbuf.n)
+        {
+            // double线程数量
+            for(unsigned long i = 0; i < cnt; ++i)
+            {
+                Pthread_create(&tid,NULL,worker,NULL);
+                queue_push(&q,tid);
+            }
+            cnt = 2 * cnt;
+        }
+        pthread_mutex_unlock(&(sbuf.mutex));
+    }
 }
 
 int main(int argc,char **argv)
@@ -40,17 +115,20 @@ int main(int argc,char **argv)
     }
     // 打开监听文件描述符
     listenfd = Open_listenfd(argv[1]);
+    sbuf_init(&sbuf,SBUFSIZE);  // 初始化缓冲
+
+    /* 创建管理者线程 */
+    pthread_t tid;
+    Pthread_create(&tid,NULL,manager,NULL);
     while(1)
     {
         clientlen = sizeof(clientaddr);
         // 接受连接请求
-        int *connfd = (int*)malloc(sizeof(int));
-        *connfd = Accept(listenfd,(SA*)&clientaddr,&clientlen);
+        int connfd = Accept(listenfd,(SA*)&clientaddr,&clientlen);
         // 获得连接套接字对应的客户端地址和端口
         // getnameinfo((SA*)&clientaddr,clientlen,hostname,MAXLINE,port,MAXLINE,0);
         // printf("Accept connnection from (%s,%s)\n",hostname,port);
-        pthread_t id;
-        Pthread_create(&id,NULL,thread,(void*)connfd);
+        sbuf_insert(&sbuf,connfd);
     }
 }
 

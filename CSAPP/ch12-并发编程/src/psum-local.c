@@ -1,18 +1,34 @@
 #include "csapp.h"
 #define MAXTHREADS 32
 
-void *sum_local(void *vargp); /* Thread routine */
+/* 
+执行参数1：./bin/psum-local 1 31
+计算时间1：4.825751秒
 
-/* Global shared variables */
-long psum[MAXTHREADS];  /* Partial sum computed by each thread */
-long nelems_per_thread; /* Number of elements summed by each thread */
+执行参数2: ./bin/psum-local 2 31
+计算时间2: 5.002012秒
+
+执行参数3: ./bin/psum-local 4 31
+计算时间3: 5.402827秒
+
+执行参数4: ./bin/psum-local 8 31
+计算时间4: 5.503253秒
+
+执行参数5: ./bin/psum-mutex 16 31
+计算时间5: 5.556779秒
+*/
+
+
+void *sum_local(void *vargp); 
+
+long psum[MAXTHREADS];  
+long nelems_per_thread; 
 
 int main(int argc, char **argv)
 {
     long i, nelems, log_nelems, nthreads, myid[MAXTHREADS], result = 0;
     pthread_t tid[MAXTHREADS];
 
-    /* Get input arguments */
     if (argc != 3)
     {
         printf("Usage: %s <nthreads> <log_nelems>\n", argv[0]);
@@ -22,48 +38,44 @@ int main(int argc, char **argv)
     log_nelems = atoi(argv[2]);
     nelems = (1L << log_nelems);
 
-    /* Check input arguments */
     if ((nelems % nthreads) != 0 || (log_nelems > 31))
     {
         printf("Error: invalid nelems\n");
         exit(0);
     }
     nelems_per_thread = nelems / nthreads;
-    clock_t start = clock();
-    /* Create peer threads and wait for them to finish */
-    for (i = 0; i < nthreads; i++)
-    {                                                       // line:conc:psumlocal:createloop1
-        myid[i] = i;                                        // line:conc:psumlocal:createloop2
-        Pthread_create(&tid[i], NULL, sum_local, &myid[i]); // line:conc:psumlocal:createloop3
-    }                                                       // line:conc:psumlocal:createloop4
-    for (i = 0; i < nthreads; i++)                          // line:conc:psumlocal:waitloop1
-        Pthread_join(tid[i], NULL);                         // line:conc:psumlocal:waitloop2
 
-    /* Add up the partial sums computed by each thread */
-    for (i = 0; i < nthreads; i++) // line:conc:psumlocal:sumloop1
-        result += psum[i];         // line:conc:psumlocal:sumloop2
+    clock_t start = clock();
+    for (i = 0; i < nthreads; i++)
+    {                                                       
+        myid[i] = i;                                        
+        Pthread_create(&tid[i], NULL, sum_local, &myid[i]); 
+    }                                                       
+    for (i = 0; i < nthreads; i++)                          
+        Pthread_join(tid[i], NULL);                         
+
+    for (i = 0; i < nthreads; i++) 
+        result += psum[i];      
+
     clock_t stop = clock();
-    printf("计算时间为：%f秒", (double)(stop - start) / CLOCKS_PER_SEC);
-    /* Check final answer */
-    if (result != (nelems * (nelems - 1)) / 2) // line:conc:psumlocal:check1
-        printf("Error: result=%ld\n", result); // line:conc:psumlocal:check2
+    printf("计算时间为：%f秒\n", (double)(stop - start) / CLOCKS_PER_SEC);
+    if (result != (nelems * (nelems - 1)) / 2) 
+        printf("Error: result=%ld\n", result); 
 
     exit(0);
 }
 
-/* $begin psumlocalthread */
-/* Thread routine for psum-local.c */
 void *sum_local(void *vargp)
 {
-    long myid = *((long *)vargp); /* Extract the thread ID */        // line:conc:psumlocal:extractid
-    long start = myid * nelems_per_thread; /* Start element index */ // line:conc:psumlocal:getstart
-    long end = start + nelems_per_thread; /* End element index */    // line:conc:psumlocal:getend
+    long myid = *((long *)vargp); 
+    long start = myid * nelems_per_thread;
+    long end = start + nelems_per_thread; 
     long i, sum = 0;
 
     for (i = start; i < end; i++)
-    {                 // line:conc:psumlocal:threadsumloop1
-        sum += i;     // line:conc:psumlocal:threadsumloop2
-    }                 // line:conc:psumlocal:threadsumloop3
-    psum[myid] = sum; // line:conc:psumlocal:
+    {                 
+        sum += i;     
+    }                 
+    psum[myid] = sum; 
     return NULL;
 }
