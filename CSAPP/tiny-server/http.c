@@ -35,11 +35,11 @@ void* worker(void *arg)
         *    取消请求会被挂起，这意味这在下面的网络通信中
         *    线程不会被取消，直到取消状态再次变成PTHREAD_CANCEL_ENABLE
         *  */
-        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,&oldstate);    
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,&oldstate);   // 线程暂时不可取消   
         int connfd = sbuf_remove(&sbuf);
         transaction(connfd);   // 处理事务
         Close(connfd);  // 关闭连接
-        pthread_setcancelstate(oldstate,NULL);  // 取消状态再次变成PTHREAD_CANCEL_ENABLE
+        pthread_setcancelstate(oldstate,NULL);  // 取消状态再次变成PTHREAD_CANCEL_ENABLE，可以接受取消
         pthread_testcancel();   // 设置取消点，线程在此检查是否有取消请求，如果有，就会pthread_exit()
     }
 }

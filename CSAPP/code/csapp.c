@@ -1042,48 +1042,49 @@ int open_listenfd(char *port)
     struct addrinfo hints, *listp, *p;
     int listenfd, rc, optval=1;
 
-    /* Get a list of potential server addresses */
-    memset(&hints, 0, sizeof(struct addrinfo));
-    hints.ai_socktype = SOCK_STREAM;             /* Accept connections */
-    // PASSIVE means that it will be a listening socket
-    hints.ai_flags = AI_PASSIVE | AI_ADDRCONFIG; /* ... on any IP address */
-    hints.ai_flags |= AI_NUMERICSERV;            /* ... using port number */
+    memset(&hints, 0, sizeof(struct addrinfo)); //  只能设置某些字段，只好先清空hints
+    /* hints提供对getaddrinfo返回的listp指向的套接字链表更好的控制 */
+    hints.ai_socktype = SOCK_STREAM;      // 对每个地址，规定只返回SOCK_STREAM套接字
+    /*  hints.ai_flags 是掩码 */
+    hints.ai_flags = AI_PASSIVE | AI_ADDRCONFIG; // 返回的套接字用作被动监听的套接字，套接字地址为通配符，此时host为NULL
+    hints.ai_flags |= AI_NUMERICSERV;            // 强制参数端口为数字
     if ((rc = getaddrinfo(NULL, port, &hints, &listp)) != 0) {
         fprintf(stderr, "getaddrinfo failed (port %s): %s\n", port, gai_strerror(rc));
         return -2;
     }
 
-    /* Walk the list for one that we can bind to */
+    /* 遍历列表，找到套接字，直到成功 */
     for (p = listp; p; p = p->ai_next) {
-        /* Create a socket descriptor */
+        /* 直接用返回addrinfo中的数据结构作为参数调用socket函数 */
         if ((listenfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) < 0) 
-            continue;  /* Socket failed, try the next */
+            continue;  // 失败了，继续链表中下一个套接字地址
 
         /* Eliminates "Address already in use" error from bind */
         setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR,    //line:netp:csapp:setsockopt
                    (const void *)&optval , sizeof(int));
 
-        /* Bind the descriptor to the address */
+        /* 将套接字描述符绑定到套接字地址，同样用addrinfo的值作为参数 */
         if (bind(listenfd, p->ai_addr, p->ai_addrlen) == 0)
-            break; /* Success */
-        if (close(listenfd) < 0) { /* Bind failed, try the next */
+            break;  // 绑定成功，跳出循环
+        if (close(listenfd) < 0) 
+        {   
+            /* 绑定失败，关闭这个套接字描述符，继续下一个 */
             fprintf(stderr, "open_listenfd close failed: %s\n", strerror(errno));
             return -1;
         }
     }
 
-
-    /* Clean up */
-    freeaddrinfo(listp);
-    if (!p) /* No address worked */
+    freeaddrinfo(listp);    // 为了避免内存泄露，释放链表
+    if (!p)     // p为空，意味着链表检查完，没有套接字地址绑定描述符成功
         return -1;
-
-    /* Make it a listening socket ready to accept connection requests */
-    if (listen(listenfd, LISTENQ) < 0) {
-        close(listenfd);
-	return -1;
+    
+    /* 在监听套接字描述符上监听 */
+    if (listen(listenfd, LISTENQ) < 0) // 出错的话返回-1
+    {
+        close(listenfd);    
+	    return -1;
     }
-    return listenfd;
+    return listenfd;    // 返回监听描述符
 }
 /* $end open_listenfd */
 
@@ -1098,7 +1099,6 @@ int Open_clientfd(char *hostname, char *port)
     
     return rc;
 }
-
 
 
 int Open_listenfd(char *port) 
