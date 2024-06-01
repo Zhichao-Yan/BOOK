@@ -38,7 +38,7 @@ void* worker(void *arg)
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,&oldstate);   // 线程暂时不可取消   
         int connfd = sbuf_remove(&sbuf);
         transaction(connfd);   // 处理事务
-        Close(connfd);  // 关闭连接
+        Close(connfd);  // 并不是所有都需要关闭连接，我们可以使用持久连接
         pthread_setcancelstate(oldstate,NULL);  // 取消状态再次变成PTHREAD_CANCEL_ENABLE，可以接受取消
         pthread_testcancel();   // 设置取消点，线程在此检查是否有取消请求，如果有，就会pthread_exit()
     }
@@ -141,6 +141,7 @@ void transaction(int fd)
     Rio_readinitb(&rio,fd);
 
     // 读一行获取请求头，放入buf
+    printf("---->Request<----:\n");
     Rio_readlineb(&rio,buf,MAXLINE);
     printf("%s",buf);
     //  获得方法 URL连接 以及HTTP版本
@@ -321,7 +322,7 @@ void serve_static(int fd,char *filename,int filesize,int head_only)
     char *srcp,filetype[MAXLINE] = "",line[MAXBUF] = "",header[MAXBUF] = "",tmp[MAXBUF] = "";
     
     // 响应行
-    sprintf(line,"HTTP/1.0 200 OK\r\n");
+    sprintf(line,"HTTP/1.1 200 OK\r\n");
     Rio_writen(fd,line,strlen(line));
 
     // 响应报头Server
