@@ -746,11 +746,16 @@ void V(sem_t *sem)
  ****************************************/
 
 /* rio_readn Robustly read n bytes (unbuffered)
- * 具有更高的鲁棒性，用于网络编程中，能够较好出来网络编程通信中的不足值
- * 1. 遇到EOF还是会返回不足值
+ * 在网络编程中，因为较长的网络延迟，会导致系统调用read()返回不足值。
+ * 1. 返回正数字节数
+ *      1. 遇到EOF，返回不足值，但是不一定为0，可能是小于n的字节数目
+ *      2. 返回足值n
  * 2. 出错会返回-1
- * 3. 能够重启被中断的系统调用函数read
- * 总得来说，相比read函数具有更好的鲁棒性
+ * 特点：
+ * 1. 因为网络延迟，遇到read()返回除开EOF外的不足值，rio_readn()能够自动重启read()继续读取，
+ * 2. read()如果被信号处理程序中断，rio_readn()能够自动重启read()，具有较好的移植性
+ * 3. 对同一个描述符，可以任意交错调用rio_readn和rio_writen
+ * 总结：能够处理网络延迟，并且碰到信号处理程序中断能够重启，因此相比read函数具有更好的鲁棒性
  * */
 ssize_t rio_readn(int fd, void *usrbuf, size_t n) 
 {
@@ -761,7 +766,7 @@ ssize_t rio_readn(int fd, void *usrbuf, size_t n)
     {
     /*  系统调用read如果被信号中断，信号处理函数执行完成后，read不再继续，
      *  而是返回-1，并且设置错误代码errno == EINTR。
-     *  系统调用被中断通常不会导致文件描述符的状态或数据流的状态发生改变。
+     *  系统调用read被中断通常不会导致文件描述符的状态或数据流的状态发生改变。
      *  也就是说，被中断的read调用不会影响文件描述符指向的文件或流的当前读取位置。
      *  这里遇到errno == EINTR的情况，会设置nread = 0，nleft保存不变，从而重新进入循环
      *  这里封装了read，能够自动重启中断的系统调用函数read，包装函数更具有鲁棒性
@@ -775,7 +780,7 @@ ssize_t rio_readn(int fd, void *usrbuf, size_t n)
         } 
         else if (nread == 0)    // 当read函数遇到EOF，会返回0，因此如果nread为0，表面遇到EOF
             break;              /* EOF */
-        nleft -= nread;
+        nleft -= nread;     // 遇到read()返回不足值
         bufp += nread;
     }
     return (n - nleft);         /* Return >= 0 */
@@ -783,7 +788,7 @@ ssize_t rio_readn(int fd, void *usrbuf, size_t n)
 
 /* rio_writen Robustly write n bytes (unbuffered)
  * 1. 出错返回-1
- * 2. 不返回不足值
+ * 2. 绝对不返回不足值
  * 
  * */
 ssize_t rio_writen(int fd, void *usrbuf, size_t n) 
@@ -820,16 +825,20 @@ ssize_t rio_writen(int fd, void *usrbuf, size_t n)
  *    rio_cnt is the number of unread bytes in the internal buffer. On
  *    entry, rio_read() refills the internal buffer via a call to
  *    read() if the internal buffer is empty.
- * 1. 返回正值：可能是一个不足值
+ * 1. 返回读取的字节数：可能是一个不足值 
+ *      1. 返回不足值：
+ *          1. 返回0：read遇到了EOF
+ *          2. 其他大于0的不足值：read读取了比n小的字节数，或者内部缓冲剩余字节数小于n
+ *      2. 返回足值n
  * 2. 返回-1:表示遇到了非信号处理程序中断的其他错误
- * 3. 返回0：表示遇到了EOF 
+ * 3. 能够处理信号处理程序带来的中断并重新启动read()
  */
 static ssize_t rio_read(rio_t *rp, char *usrbuf, size_t n)
 {
     int cnt;
     while (rp->rio_cnt <= 0)    // 缓冲区中未读的字节树为小于等于0
     {  
-        /* Refill if buf is empty 重新读取并填充缓冲区 */
+        /* Refill if buf is empty 重新读取并填充内部缓冲区 */
 	    rp->rio_cnt = read(rp->rio_fd, rp->rio_buf, sizeof(rp->rio_buf));
         if (rp->rio_cnt < 0) 
         {
@@ -847,15 +856,15 @@ static ssize_t rio_read(rio_t *rp, char *usrbuf, size_t n)
 	    else        
 	        rp->rio_bufptr = rp->rio_buf; // 成功读取了rp->rio_cnt个字节并设置rp->rio_bufptr
     }
-    /* 实际可能read返回不足值，因此rp->rio_cnt可能是不足值，所以取rp->rio_cnt和n的较小者 */
-    cnt = n;          
+    /* rp->rio_cnt可能远大于需要的n，但是也可能小于n（因为read读取了不足值）*/
+    cnt = n;          // cnt取cnt和rp->rio_cnt的较小者
     if (rp->rio_cnt < n)   
 	    cnt = rp->rio_cnt;
-    /* 从应用缓冲rp->rio_buf拷贝cnt个字节到用户缓冲usrbuf */
+    /* 从内部缓冲rp->rio_bufptr拷贝cnt个字节到用户缓冲usrbuf */
     memcpy(usrbuf, rp->rio_bufptr, cnt);    
-    rp->rio_bufptr += cnt;  // 更新rp->rio_bufptr位置
-    rp->rio_cnt -= cnt; // 更新缓冲区未读字节数量
-    return cnt; // 返回从缓冲区复制出来的字节数目，可能不足值
+    rp->rio_bufptr += cnt;  // 更新rp->rio_bufptr位置，以备下次读取
+    rp->rio_cnt -= cnt; // 更新缓冲区未读字节数量，以备下次读取
+    return cnt; // 返回从缓冲区复制出来的字节数目
 }
 
 /*
@@ -872,13 +881,15 @@ void rio_readinitb(rio_t *rp, int fd)
 
 /*
  * rio_readnb - Robustly read n bytes (buffered)
- * 带缓冲的读函数（具有鲁棒性）
- * 从内部缓冲区复制n个bytes数据
- * 适合既包含文本又包含二进制数据的文件
- * 对同一描述符和缓冲，rio_readlineb和rio_readnb可以交错使用
+ * 带内部缓冲的读函数（具有鲁棒性）特点：
+ * 1. 从内部缓冲区复制n个bytes数据，如果内部缓冲区空了，能够自动填充
+ * 2. 适合既包含文本又包含二进制数据的文件：使用rio_readnb读取二进制，使用rio_readlineb读取文本
+ * 3. 对同一描述符和内部缓冲，rio_readlineb和rio_readnb可以交错使用
+ * 返回值
  * 1. 返回-1，出现非信号中断的错误
- * 2. 返回0，遇到EOF
- * 3. 返回正数，可能是不足值
+ * 2. 返回正数字节数
+ *      1. 返回不足值：因为遇到EOF，返回不足值，但是不一定为0，而是已经读取的小于n的字节数
+ *      2. 返回足值n 
  */
 ssize_t rio_readnb(rio_t *rp, void *usrbuf, size_t n) 
 {

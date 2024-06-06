@@ -5,6 +5,7 @@
 #ifndef __CSAPP_H__
 #define __CSAPP_H__
 
+#include <netdb.h> 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
