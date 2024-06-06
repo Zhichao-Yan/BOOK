@@ -2,7 +2,6 @@
 #include "sbuf.h"
 #include "queue.h"
 #include "http.h"
-#include <sys/select.h>
 #define SBUFSIZE 16
 #define QUEUE_SIZE 100
 #define MINI_THREADS 4
