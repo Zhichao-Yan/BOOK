@@ -803,12 +803,7 @@ ssize_t rio_writen(int fd, void *usrbuf, size_t n)
             // 道理同rio_readn()
             if (errno == EINTR)  /* Interrupted by sig handler return */
                 nwritten = 0;    /* and call write() again */
-            else if(errno == EPIPE)
-            {
-                /* homework 11.13 */
-                fprintf(stderr, "Client already closed the connection prematurely.\n");
-                break;  // 直接退出循环，返回n，避免进程直接终止
-            }else
+            else 
                 return -1;       /* errno set by write() */
         }
         nleft -= nwritten;
