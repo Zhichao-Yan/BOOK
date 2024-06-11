@@ -685,54 +685,19 @@ void parse_path(char *path,char *filename,char *args)
     }
     return;
 }
-
-
-
-/* 服务静态文件 */
+/* 发送静态文件（mmap映射） */
 void serve_static(int fd,char *filename,char *args,int head_only)
 {
-    /* 打开文件并获取文件描述符 */
-    int srcfd = Open(filename, O_RDONLY, 0);
-    if (srcfd < 0) 
-    {
-        // 错误处理
-        return;
-    }
-    /* 获取文件大小 */
+    int srcfd = Open(filename,O_RDONLY,0);  // 打开一个文件filename并返回文件描述符
     struct stat sbuf;
     if (fstat(srcfd, &sbuf) < 0) 
     {
-        // 错误处理
-        Close(srcfd);
+        perror("文件状态获取失败\n");
         return;
     }
     size_t filesize = sbuf.st_size;
-
-
-    // char *buf = (char *)malloc(filesize); 
-    // if (buf == NULL) 
-    // {
-    //     // 错误处理
-    //     Close(srcfd);
-    //     return;
-    // }
-    // // 读取文件内容
-    // ssize_t n = Rio_readn(srcfd, buf, filesize);
-    // if (n < 0) 
-    // {
-    //     // 错误处理
-    //     free(buf);
-    //     Close(srcfd);
-    //     return;
-    // }
-    // /* body */
-    // char *body;
-    // if(head_only == 1)
-    // {
-    //     body = NULL;    // 因为只要首部，所以body为NULL
-    // }else{
-    //     body = buf;     // body == buf
-    // }
+    /* 映射到body */
+    char *body = Mmap(NULL,filesize,PROT_READ,MAP_PRIVATE,srcfd,0);
 
     /* 构造响应报文首部*/
     char header[MAXBUF],tmp[MAXLINE],filetype[MAXLINE];
@@ -756,31 +721,89 @@ void serve_static(int fd,char *filename,char *args,int head_only)
     printf("---->Response<----:\n");
     printf("%s",line);
     printf("%s",header);
+    send_response(fd,line,header,NULL);
 
-    /*     
-    *   打开文件并进行内存映射
-    *   mmap()系统调用使得一个普通文件映射到进程的虚拟区域
-    *   普通文件被映射到进程地址空间后，进程可以像访问普通内存一样对文件进行访问
-    *   NULL 设置为NULL时表示由系统决定映射区的起始地址
-    *   filesize 以字节为单位不足一内存页按一内存页处理
-    *   PROT_READ 页内容可以被读取
-    *   MAP_PRIVATE 建立一个写入时拷贝的私有映射。内存区域的写入不会影响到原文件 
-    * */
-
-    char *srcp = Mmap(NULL,filesize,PROT_READ,MAP_PRIVATE,srcfd,0);
+    if(head_only == 0)
+    {
+        Rio_writen(fd,body,filesize);   // 从body开始写入filesize个字节到fd
+    }
     Close(srcfd);   // 关闭文件描述符
-    send_response(fd,line,header,srcp);
-    //Rio_writen(fd,srcp,filesize);   // 从srcp开始写入filesize个字节到fd
-    Munmap(srcp,filesize);      // 在进程地址空间中解除一个映射关系
-    // 分配内存
-    
-
-    // Close(fd);
-    // Close(srcfd);   // 关闭文件描述符
-    // free(buf);  // 释放内存
+    Munmap(body,filesize);      // 在进程地址空间中解除一个映射关系
     return;
+}
 
+/* 服务静态文件（malloc方式） homework 11.9 */
+void serve_static_malloc(int fd,char *filename,char *args,int head_only)
+{
+    /* 打开文件并获取文件描述符 */
+    int srcfd = Open(filename, O_RDONLY, 0);
+    if (srcfd < 0) 
+    {
+        // 错误处理
+        perror("文件打开失败\n");
+        return;
+    }
+    /* 获取文件大小 */
+    struct stat sbuf;
+    if (fstat(srcfd, &sbuf) < 0) 
+    {
+        // 错误处理
+        perror("无法获取文件状态\n");
+        Close(srcfd);
+        return;
+    }
+    size_t filesize = sbuf.st_size;
 
+    char *buf = (char *)malloc(filesize); 
+    if (buf == NULL) 
+    {
+        // 错误处理
+        perror("内存分配失败\n");
+        Close(srcfd);
+        return;
+    }
+    // 读取文件内容
+    ssize_t n = Rio_readn(srcfd, buf, filesize);
+    if (n < 0) 
+    {
+        // 错误处理
+        free(buf);
+        Close(srcfd);
+        return;
+    }
+
+    /* 构造响应报文首部*/
+    char header[MAXBUF],tmp[MAXLINE],filetype[MAXLINE];
+    strcpy(header,"Server: Tiny Web Server\r\n");
+    // 响应报头Content-length
+    sprintf(tmp,"Content-length: %ld\r\n",filesize);
+    strcat(header,tmp);
+    // 获取文件类型，用于填充响应报头Content-type
+    get_filetype(filename,filetype);    
+    sprintf(tmp,"Content-type: %s\r\n",filetype);
+    strcat(header,tmp);  
+    // 响应报头Connection
+    strcat(header,"Connection: close\r\n");
+    // 响应报头结尾的回车换行符
+    strcat(header,"\r\n");
+
+    // 响应行： HTTP版本 状态码 状态消息
+    char line[MAXBUF] = {'\0'};
+    strcpy(line,"HTTP/1.1 200 OK\r\n");
+
+    
+    printf("---->Response<----:\n");
+    printf("%s",line);
+    printf("%s",header);
+    send_response(fd,line,header,NULL);
+    if(head_only == 0)
+    {
+        Rio_writen(fd,buf,filesize);    // 从body开始写入filesize个字节到fd
+    }
+
+    Close(srcfd);   // 关闭文件描述符
+    free(buf);  // 释放内存
+    return;
 }
 
 /* 解析查询参数，放入result中 */
