@@ -1,17 +1,22 @@
 ROOT=..
+BUILD=bin
+SRC_DIR=src
+HOMEWORK_DIR=homework
 PLATFORM=$(shell $(ROOT)/systype.sh)
 include $(ROOT)/Make.defines.$(PLATFORM)
-SRC = 
+SRC = 14-1
+HOMEWORK = 
 
-all: $(homework) $(src) 
+all: $(SRC) $(HOMEWORK)
 
-$(homework): % : $(HOMEWORK_DIR)/%.c
-	@mkdir -p $(BUILD)
-	$(CC) $(CFLAGS) -I$(INCLUDE) $^ -o $(BUILD)/$@
+$(HOMEWORK): % : $(HOMEWORK_DIR)/%.c $(LIBAPUE)
+	$(CC) $(CFLAGS) $< -o $(BUILD)/$@ $(LDFLAGS) $(LDLIBS)
 
-$(src): % : $(SRC_DIR)/%.c
-	@mkdir -p $(BUILD)
-	$(CC) $(CFLAGS) -I$(INCLUDE) $^ -o $(BUILD)/$@
+$(SRC): % : $(SRC_DIR)/%.c $(LIBAPUE)
+	$(CC) $(CFLAGS) $< -o $(BUILD)/$@ $(LDFLAGS) $(LDLIBS)
+
+
+include $(ROOT)/Make.libapue.inc
 
 clean:
 	rm -rf $(BUILD)

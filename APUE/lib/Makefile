@@ -23,4 +23,4 @@ $(LIBMISC):	$(OBJS)
 clean:
 	rm -f *.o a.out core temp.* $(LIBMISC)
 
-include $(ROOT)/Make.libapue.inc
+# include $(ROOT)/Make.libapue.inc
