@@ -112,14 +112,6 @@ void send_error_response(int fd,char *version,const char *code,const char *statu
     }else{
         send_response(fd,line,header,body); 
     }
-    /* 发送响应行 */
-    // Rio_writen(fd,line,strlen(line));
-    /* 发送首部 */
-    // Rio_writen(fd,header,strlen(header));
-    /* 发送响应主体 */
-    // Rio_writen(fd,body,strlen(body));
-
-    close(fd);   //  因为错误，所以关闭连接描述符
     return;
 }
 
@@ -409,28 +401,6 @@ void transaction(int fd)
     }else{
         strcpy(host,tmp);
     }
-    // if(ptr) // tmp存在端口号,把之前获得的主机和端口号进行覆盖，以报文中Host首部为优先
-    // {
-    //     strcpy(port,ptr+1);
-    //     *ptr = '\0';
-    //     strcpy(host,tmp);
-    // }else{                  // tmp没有端口号，把主机进行覆盖，如果端口号还是为空，
-    //     strcpy(host,tmp);   // 覆盖主机
-    //     if(strcmp(port,"") == 0)    // 如果目前端口号仍然为空，即之前没有获取到
-    //     {
-    //         if(strcmp(scheme,"") == 0)  // 并且方案也为空
-    //         {
-    //             strcpy(port,"443"); // 赋予默认的443端口号
-    //         }else if(strcasecmp(scheme,"HTTP") == 0)    // 如果协议方案为http
-    //         {
-    //             strcpy(port,"80");  // 赋予80端口号
-    //         }else if(strcasecmp(scheme,"HTTPS") == 0)   // 如果协议方案为https
-    //         {
-    //             strcpy(port,"443"); // 赋予443端口号
-    //         }
-    //     }
-    //     // 否则依照之前获取的端口号
-    // }
 
     if(strcmp(host,localhost) == 0 && strcmp(port,localport) == 0)
     {
@@ -457,6 +427,7 @@ void transaction(int fd)
         }else{
             send_error_response(fd,"HTTP/1.1","501","Not implemented","Server doesn't implemented this method",method,0);
         }
+        close(fd);
     }else{
         /* 进行代理转发 */
         proxy_service(fd,host,port,method,url,version);
@@ -514,11 +485,81 @@ void forward_data(int clientfd, int serverfd)
     return;
 }
 
+int negotiate(int clientfd, int serverfd)
+{
+    char buf[MAXBUF] = {'\0'};
+    rio_t rio_client,rio_server;
+    Rio_readinitb(&rio_client,clientfd);
+    Rio_readinitb(&rio_server,serverfd);
+
+    int max_fd = (clientfd > serverfd ? clientfd : serverfd); 
+    fd_set read_set,ready_set;
+    FD_ZERO(&read_set);
+    FD_SET(clientfd,&read_set);
+    FD_SET(serverfd,&read_set);
+    struct timeval timeout;
+    timeout.tv_sec = 60; // 等待时间60秒
+    timeout.tv_usec = 0; // 微秒，0表示不使用微秒级超时
+    int rc;
+    while(1)
+    {
+        ready_set = read_set;
+        int activity = select(max_fd + 1, &ready_set, NULL, NULL, &timeout);
+        // 检查 select 返回值
+        if (activity == 0) 
+        {
+            return -1; // 超时,退出循环
+        } else if (activity > 0)
+        {
+            if (FD_ISSET(clientfd, &ready_set)) // 客户端可以读了
+            {
+                rc = rio_readnb(&rio_client,buf,MAXLINE);   // 从客户端读
+                if( rc <= 0) // 客户端可以读取，但是仍然可能出错或被关闭
+                {
+                    perror("rio_readn error from clientfd\n");
+                    return -1;
+                }else if(rc > 0)
+                {
+                    if(rio_writen(serverfd, buf, rc) < 0) // 转发给服务端
+                    {
+                        if(errno == EPIPE)
+                        {
+                            perror("Server closed the connection prematurely\n");
+                            return -1;
+                        }
+                    }else{
+                        return 1;
+                    }
+                }
+            }   
+            if (FD_ISSET(serverfd, &ready_set)) // 服务端可以读了
+            {
+                rc = rio_readnb(&rio_server,buf,MAXLINE); // 尝试从服务端读取
+                if( rc <= 0) // 服务端可以读取，但是仍然可能出错或被关闭
+                {
+                    perror("rio_readn error from serverfd\n");
+                    return -1;
+                }else if(rc > 0)
+                {
+                    if(rio_writen(clientfd, buf, rc) < 0)// 转发给客户端
+                    {
+                        if(errno == EPIPE)
+                        {
+                            perror("Client closed the connection prematurely.\n");
+                            return -1;
+                        }
+                    }else{
+                        return 1;
+                    }
+                }
+            }
+        }
+    }
+}
 
 /* 代理服务 */
 void proxy_service(int clientfd,char *host,char *port,char *method,char *url,char *version)
-{
-
+{ 
     if (strcasecmp(method, "CONNECT") == 0)  
     {
         // 连接目标服务器
@@ -526,84 +567,25 @@ void proxy_service(int clientfd,char *host,char *port,char *method,char *url,cha
         if(serverfd < 0)
         {
             send_error_response(clientfd,"HTTP/1.1","503","Service Unavailable","Failed connecting to the Server",host,0);
+            close(clientfd);
             return;
         }else{
-            send_response(clientfd, "HTTP/1.1 400 bad request\r\n","Connection: close\r\n\r\n",NULL);
-            close(clientfd);
-            close(serverfd);
-            // 发送连接建立的响应
-            // send_response(clientfd, "HTTP/1.1 200 Connection Established\r\n","Proxy-agent: your_proxy_server\r\n\r\n",NULL);
-
-            // 开始转发数据
-            //forward_data(clientfd, serverfd);
+            char header[MAXLINE];
+            strcpy(header,"Server: The Tiny webserver\r\n");
+            strcat(header,"Proxy-Connection: keep-alive\r\n");
+            strcat(header,"Connection: keep-alive\r\n");
+            strcat(header,"\r\n");
+            send_response(clientfd, "HTTP/1.1 200 Connection Established\r\n",header,NULL);
+            if(negotiate(clientfd, serverfd) > 0) // 进行协商，协商成果，则转发数据
+            {
+                forward_data(clientfd, serverfd); // 开始转发数据
+            }else{
+                close(clientfd);
+                close(serverfd);
+                return;
+            }
         }
     }
-
-    // rio_t rio_client,rio_server;
-    // Rio_readinitb(&rio_client,clientfd);
-    // Rio_readinitb(&rio_server,serverfd);
-
-    // int max_fd = (clientfd > serverfd ? clientfd : serverfd); 
-    // fd_set read_set,ready_set;
-    // FD_ZERO(&read_set);
-    // FD_SET(clientfd,&read_set);
-    // FD_SET(serverfd,&read_set);
-    // struct timeval timeout;
-    // timeout.tv_sec = 60; // 等待时间60秒
-    // timeout.tv_usec = 0; // 微秒，0表示不使用微秒级超时
-    // int rc;
-    // while(1)
-    // {
-    //     ready_set = read_set;
-    //     int activity = select(max_fd + 1, &ready_set, NULL, NULL, &timeout);
-    //     // 检查 select 返回值
-    //     if (activity == 0) 
-    //     {
-    //         break; // 超时,退出循环
-    //     } else if (activity > 0)
-    //     {
-    //         if (FD_ISSET(clientfd, &ready_set)) // 客户端可以读了
-    //         {
-    //             rc = rio_readnb(&rio_client,buf,MAXLINE);
-    //             if( rc < 0) // 从客户端成功读取
-    //             {
-    //                 perror("rio_readn error from clientfd\n");
-    //                 break;
-    //             }else if(rc >= 0)
-    //             {
-    //                 if(rio_writen(serverfd, buf, strlen(buf)) < 0) // 转发给服务端
-    //                 {
-    //                     if(errno == EPIPE)
-    //                     {
-    //                         perror("Server already closed the connection prematurely.\n");
-    //                     }
-    //                     break;
-    //                 }
-    //             }
-    //         }   
-    //         if (FD_ISSET(serverfd, &ready_set)) // 服务端可以读了
-    //         {
-    //             rc = rio_readnb(&rio_server,buf,MAXLINE); // 从服务端成功读取
-    //             if( rc < 0) // 从客户端成功读取
-    //             {
-    //                 perror("rio_readn error from serverfd\n");
-    //                 break;
-    //             }else if(rc >= 0)
-    //             {
-    //                 if(rio_writen(clientfd, buf, strlen(buf)) < 0)// 转发给客户端
-    //                 {
-    //                     if(errno == EPIPE)
-    //                     {
-    //                         perror("Client already closed the connection prematurely.\n");
-    //                     }
-    //                     break;
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-    // close(clientfd);
-    // close(serverfd);
     return;
 }
 
@@ -878,3 +860,32 @@ void ignore_sigpipe(int sig)
     printf("连接被客户端提前关闭\n");
     return;
 }
+
+
+
+
+// if(ptr) // tmp存在端口号,把之前获得的主机和端口号进行覆盖，以报文中Host首部为优先
+// {
+//     strcpy(port,ptr+1);
+//     *ptr = '\0';
+//     strcpy(host,tmp);
+// }else{                  // tmp没有端口号，把主机进行覆盖，如果端口号还是为空，
+//     strcpy(host,tmp);   // 覆盖主机
+//     if(strcmp(port,"") == 0)    // 如果目前端口号仍然为空，即之前没有获取到
+//     {
+//         if(strcmp(scheme,"") == 0)  // 并且方案也为空
+//         {
+//             strcpy(port,"443"); // 赋予默认的443端口号
+//         }else if(strcasecmp(scheme,"HTTP") == 0)    // 如果协议方案为http
+//         {
+//             strcpy(port,"80");  // 赋予80端口号
+//         }else if(strcasecmp(scheme,"HTTPS") == 0)   // 如果协议方案为https
+//         {
+//             strcpy(port,"443"); // 赋予443端口号
+//         }
+//     }
+//     // 否则依照之前获取的端口号
+// }
+
+    // close(clientfd);
+    // close(serverfd);
