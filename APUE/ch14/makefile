@@ -10,11 +10,12 @@ HOMEWORK =
 all: $(SRC) $(HOMEWORK)
 
 $(HOMEWORK): % : $(HOMEWORK_DIR)/%.c $(LIBAPUE)
+	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $< -o $(BUILD)/$@ $(LDFLAGS) $(LDLIBS)
 
 $(SRC): % : $(SRC_DIR)/%.c $(LIBAPUE)
+	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $< -o $(BUILD)/$@ $(LDFLAGS) $(LDLIBS)
-
 
 include $(ROOT)/Make.libapue.inc
 

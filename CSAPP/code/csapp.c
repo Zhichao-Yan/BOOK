@@ -894,7 +894,12 @@ ssize_t rio_readnb(rio_t *rp, void *usrbuf, size_t n)
     while (nleft > 0) 
     {
         if ((nread = rio_read(rp, bufp, nleft)) < 0) 
+        {
+            if(errno == EAGAIN || errno == EWOULDBLOCK)     // 暂时没有数据可读
+                break;
+            else
                 return -1;      // 遇到非信号处理程序中断的错误，rio_read中已经帮你处理了信号中断的错误
+        }        
         else if (nread == 0)
             break;              /* 遇到EOF返回0 */
         nleft -= nread;

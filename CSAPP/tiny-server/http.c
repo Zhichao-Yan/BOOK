@@ -2,6 +2,7 @@
 #include "sbuf.h"
 #include "queue.h"
 #include "http.h"
+
 #define SBUFSIZE 16
 #define QUEUE_SIZE 100
 #define MINI_THREADS 4
@@ -62,7 +63,7 @@ void send_response(int fd,const char *line,const char *header,const char *body)
     {
         strcat(buf,body);
     }
-    Rio_writen(fd,buf,strlen(buf));
+    rio_writen(fd,buf,strlen(buf));
     return;
 }
 
@@ -131,7 +132,7 @@ void* worker(void *arg)
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,&oldstate);   // 线程暂时不可取消   
         int connfd = sbuf_remove(&sbuf);
         transaction(connfd);   // 处理事务
-        Close(connfd);  // 并不是所有都需要关闭连接，我们可以使用持久连接
+        // Close(connfd);  // 并不是所有都需要关闭连接，我们可以使用持久连接
         pthread_setcancelstate(oldstate,NULL);  // 取消状态再次变成PTHREAD_CANCEL_ENABLE，可以接受取消
         pthread_testcancel();   // 设置取消点，线程在此检查是否有取消请求，如果有，就会pthread_exit()
     }
@@ -207,16 +208,16 @@ int main(int argc,char **argv)
     }
     // 打开监听文件描述符
     listenfd = Open_listenfd(argv[1]);
-    // sbuf_init(&sbuf,SBUFSIZE);  // 初始化缓冲
+    sbuf_init(&sbuf,SBUFSIZE);  // 初始化缓冲
     /* 创建管理者线程 */
-    // pthread_t tid;
-    // Pthread_create(&tid,NULL,manager,NULL);
+    pthread_t tid;
+    Pthread_create(&tid,NULL,manager,NULL);
     while(1)
     {
         clientlen = sizeof(clientaddr);
         int connfd = Accept(listenfd,(SA*)&clientaddr,&clientlen); // 接受连接请求
-        transaction(connfd);   // 处理事务
-        // sbuf_insert(&sbuf,connfd);
+        // transaction(connfd);   // 处理事务
+        sbuf_insert(&sbuf,connfd);
     }
 }
 
@@ -491,7 +492,16 @@ int negotiate(int clientfd, int serverfd)
     rio_t rio_client,rio_server;
     Rio_readinitb(&rio_client,clientfd);
     Rio_readinitb(&rio_server,serverfd);
-
+    if(fcntl(clientfd,F_SETFL,O_NONBLOCK) < 0)
+    {
+        perror("Failed setting clientfd status flag\n");
+        return -1;
+    }
+    if(fcntl(serverfd,F_SETFL,O_NONBLOCK) < 0)
+    {
+        perror("Failed setting servertfd status flag\n");
+        return -1;
+    }
     int max_fd = (clientfd > serverfd ? clientfd : serverfd); 
     fd_set read_set,ready_set;
     FD_ZERO(&read_set);
@@ -500,7 +510,7 @@ int negotiate(int clientfd, int serverfd)
     struct timeval timeout;
     timeout.tv_sec = 60; // 等待时间60秒
     timeout.tv_usec = 0; // 微秒，0表示不使用微秒级超时
-    int rc;
+    int rr,rw;
     while(1)
     {
         ready_set = read_set;
@@ -508,53 +518,52 @@ int negotiate(int clientfd, int serverfd)
         // 检查 select 返回值
         if (activity == 0) 
         {
+            printf("select timeout\n");
             return -1; // 超时,退出循环
         } else if (activity > 0)
         {
             if (FD_ISSET(clientfd, &ready_set)) // 客户端可以读了
             {
-                rc = rio_readnb(&rio_client,buf,MAXLINE);   // 从客户端读
-                if( rc <= 0) // 客户端可以读取，但是仍然可能出错或被关闭
+                rr = rio_readnb(&rio_client,buf,MAXLINE);   // 从客户端读
+                if( rr < 0) // 客户端可以读取，但是仍然可能出错或被关闭
                 {
-                    perror("rio_readn error from clientfd\n");
+                    perror("Reading error from client\n");
                     return -1;
-                }else if(rc > 0)
+                }else if(rr > 0)
                 {
-                    if(rio_writen(serverfd, buf, rc) < 0) // 转发给服务端
+                    rw = rio_writen(serverfd, buf, rr);
+                    if( rw < 0) // 转发给服务端
                     {
-                        if(errno == EPIPE)
-                        {
-                            perror("Server closed the connection prematurely\n");
-                            return -1;
-                        }
-                    }else{
-                        return 1;
+                        return -1;
                     }
+                }else if(rr == 0)
+                {
+                    printf("Reading EOF from client\n");
+                    return -1;
                 }
-            }   
-            if (FD_ISSET(serverfd, &ready_set)) // 服务端可以读了
+            }else if (FD_ISSET(serverfd, &ready_set)) // 服务端可以读了
             {
-                rc = rio_readnb(&rio_server,buf,MAXLINE); // 尝试从服务端读取
-                if( rc <= 0) // 服务端可以读取，但是仍然可能出错或被关闭
+                rr = rio_readnb(&rio_server,buf,MAXLINE); // 尝试从服务端读取
+                if( rr < 0) // 服务端可以读取，但是仍然可能出错或被关闭
                 {
-                    perror("rio_readn error from serverfd\n");
+                    perror("Reading error from server\n");
                     return -1;
-                }else if(rc > 0)
+                }else if(rr > 0)
                 {
-                    if(rio_writen(clientfd, buf, rc) < 0)// 转发给客户端
+                    rw = rio_writen(clientfd, buf, rr);
+                    if( rw < 0)// 转发给客户端
                     {
-                        if(errno == EPIPE)
-                        {
-                            perror("Client closed the connection prematurely.\n");
-                            return -1;
-                        }
-                    }else{
-                        return 1;
+                        return -1;
                     }
+                }else if(rr == 0)
+                {
+                    printf("Reading EOF from server\n");
+                    return -1;
                 }
             }
         }
     }
+    return 1;
 }
 
 /* 代理服务 */
@@ -570,16 +579,20 @@ void proxy_service(int clientfd,char *host,char *port,char *method,char *url,cha
             close(clientfd);
             return;
         }else{
-            char header[MAXLINE];
-            strcpy(header,"Server: The Tiny webserver\r\n");
-            strcat(header,"Proxy-Connection: keep-alive\r\n");
-            strcat(header,"Connection: keep-alive\r\n");
-            strcat(header,"\r\n");
-            send_response(clientfd, "HTTP/1.1 200 Connection Established\r\n",header,NULL);
-            if(negotiate(clientfd, serverfd) > 0) // 进行协商，协商成果，则转发数据
+            char buf[MAXLINE];
+            strcpy(buf,"HTTP/1.1 200 Connection Established\r\n");
+            strcat(buf,"Server: The Tiny webserver\r\n");
+            strcat(buf,"Proxy-Connection: keep-alive\r\n");
+            strcat(buf,"Connection: keep-alive\r\n");
+            strcat(buf,"\r\n");
+            if(rio_writen(clientfd,buf,sizeof(buf)) < 0)
             {
-                forward_data(clientfd, serverfd); // 开始转发数据
-            }else{
+                close(clientfd);
+                close(serverfd);
+                return;
+            }
+            if(negotiate(clientfd, serverfd) < 0) // 进行协商，协商成果，则转发数据
+            {
                 close(clientfd);
                 close(serverfd);
                 return;
