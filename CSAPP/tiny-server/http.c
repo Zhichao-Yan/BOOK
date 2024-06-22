@@ -104,8 +104,7 @@ void send_error_response(int fd,char *version,const char *code,const char *statu
     sprintf(line,"%s %s %s\r\n",version,code,status);
 
     printf("---->Response<----:\n");
-    printf("%s",line);
-    printf("%s",header);
+    printf("%s%s",line,header);
 
     if(head_only == 1)
     {
@@ -132,7 +131,6 @@ void* worker(void *arg)
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,&oldstate);   // 线程暂时不可取消   
         int connfd = sbuf_remove(&sbuf);
         transaction(connfd);   // 处理事务
-        // Close(connfd);  // 并不是所有都需要关闭连接，我们可以使用持久连接
         pthread_setcancelstate(oldstate,NULL);  // 取消状态再次变成PTHREAD_CANCEL_ENABLE，可以接受取消
         pthread_testcancel();   // 设置取消点，线程在此检查是否有取消请求，如果有，就会pthread_exit()
     }
@@ -209,9 +207,8 @@ int main(int argc,char **argv)
     // 打开监听文件描述符
     listenfd = Open_listenfd(argv[1]);
     sbuf_init(&sbuf,SBUFSIZE);  // 初始化缓冲
-    /* 创建管理者线程 */
-    pthread_t tid;
-    Pthread_create(&tid,NULL,manager,NULL);
+    pthread_t tid; 
+    Pthread_create(&tid,NULL,manager,NULL);     // 创建管理者线程 
     while(1)
     {
         clientlen = sizeof(clientaddr);
@@ -380,8 +377,7 @@ void transaction(int fd)
     generate_header(&L,header);
 
     printf("---->Request<----:\n");
-    printf("%s",line);
-    printf("%s",header);
+    printf("%s%s",line,header);
 
     
     char scheme[MAXLINE],host[MAXLINE],port[MAXLINE],path[MAXLINE];
@@ -431,7 +427,12 @@ void transaction(int fd)
         close(fd);
     }else{
         /* 进行代理转发 */
-        proxy_service(fd,host,port,method,url,version);
+        if(strstr(host,"baidu"))
+        {
+            proxy_service(fd,host,port,method,url,version);
+        }else{
+            close(fd);
+        }
     }
     deinit_header_list(&L);
 }
@@ -579,13 +580,13 @@ void proxy_service(int clientfd,char *host,char *port,char *method,char *url,cha
             close(clientfd);
             return;
         }else{
-            char buf[MAXLINE];
+            char buf[MAXLINE] = {'\0'};
             strcpy(buf,"HTTP/1.1 200 Connection Established\r\n");
             strcat(buf,"Server: The Tiny webserver\r\n");
             strcat(buf,"Proxy-Connection: keep-alive\r\n");
             strcat(buf,"Connection: keep-alive\r\n");
             strcat(buf,"\r\n");
-            if(rio_writen(clientfd,buf,sizeof(buf)) < 0)
+            if(rio_writen(clientfd,buf,strlen(buf)) < 0)
             {
                 close(clientfd);
                 close(serverfd);
