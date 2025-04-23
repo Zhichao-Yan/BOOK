@@ -14,3 +14,12 @@ CSAPP/tiny-server/img/
 CSAPP/tiny-server/video
 CSAPP/tiny-server/http
 CSAPP/tiny-server/main
+
+# Ignore C++ executables (files without extensions)
+*
+!*/
+!*.cpp
+!*.hpp
+!*.c
+!*.h
+!*.md
